@@ -440,7 +440,7 @@ def train_cluster_net():
     if args.offline:
         logger = DummyLogger()
     else:
-        logger = TensorBoardLogger(save_dir="tensorboard",
+        logger = TensorBoardLogger(save_dir="tb_logs",
                                    name=args.exp_name)
 
     check_args(args, dataset_obj.data_dim)
