@@ -13,7 +13,7 @@
 
 #SBATCH --mail-user hesicheng2001@163.com  
 
-cd ~/2023/sicheng/DeepDPM
+cd /Share/UserHome/tzhao/2023/sicheng/GraduationDesign/DeepDPM
 pwd
 date +%c
 ./run_experiment.sh
