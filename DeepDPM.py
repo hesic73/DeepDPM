@@ -8,6 +8,7 @@ import argparse
 from argparse import ArgumentParser
 import os
 from pytorch_lightning.loggers.neptune import NeptuneLogger
+from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 from pytorch_lightning.loggers.base import DummyLogger
 import pytorch_lightning as pl
 from sklearn.metrics import normalized_mutual_info_score as NMI
@@ -19,73 +20,85 @@ from src.datasets import GMM_dataset
 from src.clustering_models.clusternet_modules.clusternetasmodel import ClusterNetModel
 from src.utils import check_args, cluster_acc
 
+from typing import Optional
+import logging
+
+logging.getLogger("lightning").setLevel(logging.ERROR)
+
 
 def parse_minimal_args(parser):
     # Dataset parameters
-    parser.add_argument("--dir", default="./pretrained_embeddings/umap_embedded_datasets/", help="dataset directory")
+    parser.add_argument(
+        "--dir",
+        default="./pretrained_embeddings/umap_embedded_datasets/",
+        help="dataset directory")
     parser.add_argument("--dataset", default="custom")
     # Training parameters
-    parser.add_argument(
-        "--lr", type=float, default=0.002, help="learning rate (default: 1e-4)"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=128, help="input batch size for training"
-    )
+    parser.add_argument("--lr",
+                        type=float,
+                        default=0.002,
+                        help="learning rate (default: 1e-4)")
+    parser.add_argument("--batch-size",
+                        type=int,
+                        default=128,
+                        help="input batch size for training")
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
         help="random seed",
     )
-    parser.add_argument(
-        "--n-jobs", type=int, default=1, help="number of jobs to run in parallel"
-    )
+    parser.add_argument("--n-jobs",
+                        type=int,
+                        default=1,
+                        help="number of jobs to run in parallel")
     parser.add_argument(
         "--device",
         type=str,
         default="cuda",
         help="device for computation (default: cpu)",
     )
+    parser.add_argument("--offline",
+                        action="store_true",
+                        help="Run training without Neptune Logger")
     parser.add_argument(
-        "--offline",
-        action="store_true",
-        help="Run training without Neptune Logger"
+        "--tag",
+        type=str,
+        default="MNIST_UMAPED",
     )
     parser.add_argument(
-        "--tag", type=str, default="MNIST_UMAPED",
+        "--max_epochs",
+        type=int,
+        default=500,
     )
-    parser.add_argument(
-        "--max_epochs", type=int, default=500,
-    )
-    parser.add_argument(
-        "--limit_train_batches", type=float, default=1., help="used for debugging"
-    )
-    parser.add_argument(
-        "--limit_val_batches", type=float, default=1., help="used for debugging" 
-    )
-    parser.add_argument(
-        "--save_checkpoints", type=bool, default=False
-    )
-    parser.add_argument(
-        "--exp_name", type=str, default="default_exp"
-    )
-    parser.add_argument(
-        "--use_labels_for_eval",
-        action = "store_true",
-        help="whether to use labels for evaluation"
-    )
+    parser.add_argument("--limit_train_batches",
+                        type=float,
+                        default=1.,
+                        help="used for debugging")
+    parser.add_argument("--limit_val_batches",
+                        type=float,
+                        default=1.,
+                        help="used for debugging")
+    parser.add_argument("--save_checkpoints", action="store_true")
+    parser.add_argument("--exp_name", type=str, default="default_exp")
+    parser.add_argument("--use_labels_for_eval",
+                        action="store_true",
+                        help="whether to use labels for evaluation")
     return parser
+
 
 def run_on_embeddings_hyperparams(parent_parser):
     parser = ArgumentParser(parents=[parent_parser], add_help=False)
-    parser.add_argument(
-        "--init_k", default=1, type=int, help="number of initial clusters"
-    )
+    parser.add_argument("--init_k",
+                        default=1,
+                        type=int,
+                        help="number of initial clusters")
     parser.add_argument(
         "--clusternet_hidden",
         type=int,
         default=50,
-        help="The dimensions of the hidden dim of the clusternet. Defaults to 50.",
+        help=
+        "The dimensions of the hidden dim of the clusternet. Defaults to 50.",
     )
     parser.add_argument(
         "--clusternet_hidden_layer_list",
@@ -98,7 +111,10 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--transform_input_data",
         type=str,
         default="normalize",
-        choices=["normalize", "min_max", "standard", "standard_normalize", "None", None],
+        choices=[
+            "normalize", "min_max", "standard", "standard_normalize", "None",
+            None
+        ],
         help="Use normalization for embedded data",
     )
     parser.add_argument(
@@ -140,12 +156,10 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=int,
         default=20,
     )
-    parser.add_argument(
-        "--log_emb",
-        type=str,
-        default="never",
-        choices=["every_n_epochs", "only_sampled", "never"]
-    )
+    parser.add_argument("--log_emb",
+                        type=str,
+                        default="never",
+                        choices=["every_n_epochs", "only_sampled", "never"])
     parser.add_argument(
         "--train_cluster_net",
         type=int,
@@ -162,9 +176,10 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=float,
         default=0.005,
     )
-    parser.add_argument(
-        "--lr_scheduler", type=str, default="StepLR", choices=["StepLR", "None", "ReduceOnP"]
-    )
+    parser.add_argument("--lr_scheduler",
+                        type=str,
+                        default="StepLR",
+                        choices=["StepLR", "None", "ReduceOnP"])
     parser.add_argument(
         "--start_sub_clustering",
         type=int,
@@ -199,20 +214,23 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--split_prob",
         type=float,
         default=None,
-        help="Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
+        help=
+        "Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
     )
     parser.add_argument(
         "--merge_prob",
         type=float,
         default=None,
-        help="merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
+        help=
+        "merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
     )
     parser.add_argument(
         "--init_new_weights",
         type=str,
         default="same",
         choices=["same", "random", "subclusters"],
-        help="How to create new weights after split. Same duplicates the old cluster's weights to the two new ones, random generate random weights and subclusters copies the weights from the subclustering net",
+        help=
+        "How to create new weights after split. Same duplicates the old cluster's weights to the two new ones, random generate random weights and subclusters copies the weights from the subclustering net",
     )
     parser.add_argument(
         "--start_merging",
@@ -224,32 +242,37 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--merge_init_weights_sub",
         type=str,
         default="highest_ll",
-        help="How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
+        help=
+        "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
     )
     parser.add_argument(
         "--split_init_weights_sub",
         type=str,
         default="random",
         choices=["same_w_noise", "same", "random"],
-        help="How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
+        help=
+        "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
     )
     parser.add_argument(
         "--split_every_n_epochs",
         type=int,
         default=10,
-        help="Example: if set to 10, split proposals will be made every 10 epochs",
+        help=
+        "Example: if set to 10, split proposals will be made every 10 epochs",
     )
     parser.add_argument(
         "--split_merge_every_n_epochs",
         type=int,
         default=30,
-        help="Example: if set to 10, split proposals will be made every 10 epochs",
+        help=
+        "Example: if set to 10, split proposals will be made every 10 epochs",
     )
     parser.add_argument(
         "--merge_every_n_epochs",
         type=int,
         default=10,
-        help="Example: if set to 10, merge proposals will be made every 10 epochs",
+        help=
+        "Example: if set to 10, merge proposals will be made every 10 epochs",
     )
     parser.add_argument(
         "--raise_merge_proposals",
@@ -267,13 +290,15 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--freeze_mus_submus_after_splitmerge",
         type=int,
         default=5,
-        help="Numbers of epochs to freeze the mus and sub mus following a split or a merge step",
+        help=
+        "Numbers of epochs to freeze the mus and sub mus following a split or a merge step",
     )
     parser.add_argument(
         "--freeze_mus_after_init",
         type=int,
         default=5,
-        help="Numbers of epochs to freeze the mus and sub mus following a new initialization",
+        help=
+        "Numbers of epochs to freeze the mus and sub mus following a new initialization",
     )
     parser.add_argument(
         "--use_priors",
@@ -281,10 +306,14 @@ def run_on_embeddings_hyperparams(parent_parser):
         default=1,
         help="Whether to use priors when computing model's parameters",
     )
-    parser.add_argument("--prior", type=str, default="NIW", choices=["NIW", "NIG"])
-    parser.add_argument(
-        "--pi_prior", type=str, default="uniform", choices=["uniform", None]
-    )
+    parser.add_argument("--prior",
+                        type=str,
+                        default="NIW",
+                        choices=["NIW", "NIG"])
+    parser.add_argument("--pi_prior",
+                        type=str,
+                        default="uniform",
+                        choices=["uniform", None])
     parser.add_argument(
         "--prior_dir_counts",
         type=float,
@@ -317,12 +346,10 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=float,
         default=".005",
     )
-    parser.add_argument(
-        "--prior_sigma_scale_step",
-        type=float,
-        default=1.,
-        help="add to change sigma scale between alternations"
-    )
+    parser.add_argument("--prior_sigma_scale_step",
+                        type=float,
+                        default=1.,
+                        help="add to change sigma scale between alternations")
     parser.add_argument(
         "--compute_params_every",
         type=int,
@@ -349,10 +376,10 @@ def run_on_embeddings_hyperparams(parent_parser):
         default="isotropic",
         choices=["diag_NIG", "isotropic", "KL_GMM_2"],
     )
-    
+
     parser.add_argument(
         "--ignore_subclusters",
-        type=bool,
+        action="store_true",
         default=False,
     )
     parser.add_argument(
@@ -360,18 +387,38 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=bool,
         default=True,
     )
-    parser.add_argument(
-        "--gpus",
-        default=None
-    )
-    parser.add_argument(
-        "--evaluate_every_n_epochs",
-        type=int,
-        default=5,
-        help="How often to evaluate the net"
-    )
+    parser.add_argument("--gpus", default=None)
+    parser.add_argument("--evaluate_every_n_epochs",
+                        type=int,
+                        default=5,
+                        help="How often to evaluate the net")
     return parser
 
+
+def need_resume(checkpoint_dir: str)->Optional[str]:
+    if not os.path.exists(checkpoint_dir):
+        print(f"No such file or directory: {checkpoint_dir}. Skip resuming")
+        return None
+    files = [
+        f for f in os.listdir(checkpoint_dir) if f.endswith('.ckpt')
+        and os.path.isfile(os.path.join(checkpoint_dir, f))
+    ]
+
+    if len(files) == 0:
+        print(f"no checkpoint file found in {checkpoint_dir}. Skip resume")
+        return None
+
+    files = [f for f in files if "end" not in f]
+
+    if len(files) == 0:
+        print(
+            f"no checkpoint file except the last model found in {checkpoint_dir}. Skip resume"
+        )
+        return None
+
+    checkpoint_path = os.path.join(checkpoint_dir, files[0])
+
+    return checkpoint_path
 
 
 def train_cluster_net():
@@ -381,7 +428,7 @@ def train_cluster_net():
     args = parser.parse_args()
 
     args.train_cluster_net = args.max_epochs
-    
+
     if args.dataset == "synthetic":
         dataset_obj = GMM_dataset(args)
     else:
@@ -389,42 +436,45 @@ def train_cluster_net():
     train_loader, val_loader = dataset_obj.get_loaders()
 
     tags = ['umap_embbeded_dataset']
-    
+
     if args.offline:
         logger = DummyLogger()
     else:
-        logger = NeptuneLogger(
-                api_key='your_API_token',
-                project_name='your_project_name',
-                experiment_name=args.exp_name,
-                params=vars(args),
-                tags=tags
-            )
+        logger = TensorBoardLogger(save_dir="tensorboard",
+                                   name=args.exp_name)
 
     check_args(args, dataset_obj.data_dim)
-
-    if isinstance(logger, NeptuneLogger):
-        if logger.api_key == 'your_API_token':
-            print("No Neptune API token defined!")
-            print("Please define Neptune API token or run with the --offline argument.")
-            print("Running without logging...")
-            logger = DummyLogger()
 
     # Main body
     if args.seed:
         pl.utilities.seed.seed_everything(args.seed)
-    
-    model = ClusterNetModel(hparams=args, input_dim=dataset_obj.data_dim, init_k=args.init_k)
+
+    model = ClusterNetModel(hparams=args,
+                            input_dim=dataset_obj.data_dim,
+                            init_k=args.init_k)
+
     if args.save_checkpoints:
         from pytorch_lightning.callbacks import ModelCheckpoint
-        checkpoint_callback = ModelCheckpoint(dirpath = f"./saved_models/{args.dataset}/{args.exp_name}")
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=f"./saved_models/{args.dataset}/{args.exp_name}",
+            period=10)
         if not os.path.exists(f'./saved_models/{args.dataset}'):
             os.makedirs(f'./saved_models/{args.dataset}')
-        os.makedirs(f'./saved_models/{args.dataset}/{args.exp_name}')
+        if not os.path.exists(
+                f'./saved_models/{args.dataset}/{args.exp_name}'):
+            os.makedirs(f'./saved_models/{args.dataset}/{args.exp_name}')
     else:
         checkpoint_callback = False
-    
-    trainer = pl.Trainer(logger=logger, max_epochs=args.max_epochs, gpus=args.gpus, num_sanity_val_steps=0, checkpoint_callback=checkpoint_callback, limit_train_batches=args.limit_train_batches, limit_val_batches=args.limit_val_batches)
+
+    trainer = pl.Trainer(logger=logger,
+                         max_epochs=args.max_epochs,
+                         gpus=args.gpus,
+                         num_sanity_val_steps=0,
+                         checkpoint_callback=checkpoint_callback,
+                         limit_train_batches=args.limit_train_batches,
+                         limit_val_batches=args.limit_val_batches,
+                         resume_from_checkpoint=need_resume(f"./saved_models/{args.dataset}/{args.exp_name}"),
+                         progress_bar_refresh_rate=0)
     trainer.fit(model, train_loader, val_loader)
 
     print("Finished training!")
@@ -439,8 +489,10 @@ def train_cluster_net():
         nmi = np.round(NMI(net_pred, labels), 5)
         ari = np.round(ARI(net_pred, labels), 5)
 
-        print(f"NMI: {nmi}, ARI: {ari}, acc: {acc}, final K: {len(np.unique(net_pred))}")
-    
+        print(
+            f"NMI: {nmi}, ARI: {ari}, acc: {acc}, final K: {len(np.unique(net_pred))}"
+        )
+
     return net_pred
 
 

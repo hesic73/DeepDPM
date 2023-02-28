@@ -14,7 +14,12 @@ class Priors:
     '''
     A prior that will hold the priors for all the parameters.
     '''
-    def __init__(self, hparams, K, codes_dim, counts=10, prior_sigma_scale=None):
+    def __init__(self,
+                 hparams,
+                 K,
+                 codes_dim,
+                 counts=10,
+                 prior_sigma_scale=None):
         self.name = "prior_class"
         self.pi_prior_type = hparams.pi_prior
         if hparams.pi_prior:
@@ -69,7 +74,7 @@ class Priors:
 class Dirichlet_prior:
     def __init__(self, K, pi_prior="uniform", counts=10):
         self.name = "Dirichlet_dist"
-        self.K = K
+        self.K: int = K
         self.counts = counts
         if pi_prior == "uniform":
             self.p_counts = torch.ones(K) * counts
@@ -94,7 +99,6 @@ class NIW_prior:
     """A class used to store niw parameters and compute posteriors.
     Used as a class in case we will want to update these parameters.
     """
-
     def __init__(self, hparams, prior_sigma_scale=None):
         self.name = "NIW"
         self.prior_mu_0_choice = hparams.prior_mu_0
@@ -107,9 +111,11 @@ class NIW_prior:
         if self.prior_mu_0_choice == "data_mean":
             self.niw_m = codes.mean(axis=0)
         if self.prior_sigma_choice == "isotropic":
-            self.niw_psi = (torch.eye(codes.shape[1]) * self.prior_sigma_scale).double()
+            self.niw_psi = (torch.eye(codes.shape[1]) *
+                            self.prior_sigma_scale).double()
         elif self.prior_sigma_choice == "data_std":
-            self.niw_psi = (torch.diag(codes.std(axis=0)) * self.prior_sigma_scale).double()
+            self.niw_psi = (torch.diag(codes.std(axis=0)) *
+                            self.prior_sigma_scale).double()
         else:
             raise NotImplementedError()
         return self.niw_m, self.niw_psi
@@ -124,49 +130,40 @@ class NIW_prior:
         codes_minus_mu = codes_k - mu_k
         S = codes_minus_mu.T @ codes_minus_mu
         psi_star = (
-            self.niw_psi
-            + S
-            + (self.niw_kappa * N_k / kappa_star)
-            * (mu_k - self.niw_m).unsqueeze(1)
-            @ (mu_k - self.niw_m).unsqueeze(0)
+            self.niw_psi + S + (self.niw_kappa * N_k / kappa_star) *
+            (mu_k - self.niw_m).unsqueeze(1) @ (mu_k - self.niw_m).unsqueeze(0)
         )
         return kappa_star, nu_star, mu_0_star, psi_star
 
     def compute_post_mus(self, N_ks, data_mus):
         # N_k is the number of points in cluster K for hard assignment, and the sum of all responses to the K-th cluster for soft assignment
-        return ((N_ks.reshape(-1, 1) * data_mus) + (self.niw_kappa * self.niw_m)) / (
-            N_ks.reshape(-1, 1) + self.niw_kappa
-        )
+        return ((N_ks.reshape(-1, 1) * data_mus) +
+                (self.niw_kappa * self.niw_m)) / (N_ks.reshape(-1, 1) +
+                                                  self.niw_kappa)
 
     def compute_post_cov(self, N_k, mu_k, data_cov_k):
         # If it is hard assignments: N_k is the number of points assigned to cluster K, x_mean is their average
         # If it is soft assignments: N_k is the r_k, the sum of responses to the k-th cluster, x_mean is the data average (all the data)
         D = len(mu_k)
         if N_k > 0:
-            return (
-                self.niw_psi
-                + data_cov_k * N_k  # unnormalize
-                + (
-                    ((self.niw_kappa * N_k) / (self.niw_kappa + N_k))
-                    * ((mu_k - self.niw_m).unsqueeze(1) * (mu_k - self.niw_m).unsqueeze(0))
-                )
-            ) / (self.niw_nu + N_k + D + 2)
+            return (self.niw_psi + data_cov_k * N_k  # unnormalize
+                    + (((self.niw_kappa * N_k) / (self.niw_kappa + N_k)) *
+                       ((mu_k - self.niw_m).unsqueeze(1) *
+                        (mu_k - self.niw_m).unsqueeze(0)))) / (self.niw_nu +
+                                                               N_k + D + 2)
         else:
             return self.niw_psi
 
     def log_marginal_likelihood(self, codes_k, mu_k):
         kappa_star, nu_star, mu_0_star, psi_star = self.compute_params_post(
-            codes_k, mu_k
-        )
+            codes_k, mu_k)
         (N_k, D) = codes_k.shape
-        return (
-            -(N_k * D / 2.0) * np.log(np.pi)
-            + mvlgamma(torch.tensor(nu_star / 2.0), D)
-            - mvlgamma(torch.tensor(self.niw_nu) / 2.0, D)
-            + (self.niw_nu / 2.0) * torch.logdet(self.niw_psi)
-            - (nu_star / 2.0) * torch.logdet(psi_star)
-            + (D / 2.0) * (np.log(self.niw_kappa) - np.log(kappa_star))
-        )
+        return (-(N_k * D / 2.0) * np.log(np.pi) +
+                mvlgamma(torch.tensor(nu_star / 2.0), D) -
+                mvlgamma(torch.tensor(self.niw_nu) / 2.0, D) +
+                (self.niw_nu / 2.0) * torch.logdet(self.niw_psi) -
+                (nu_star / 2.0) * torch.logdet(psi_star) + (D / 2.0) *
+                (np.log(self.niw_kappa) - np.log(kappa_star)))
 
 
 class NIG_prior:
@@ -174,7 +171,6 @@ class NIG_prior:
     Used as a class in case we will want to update these parameters.
     The NIG will model each codes channel separetly, so we will have d-dimensions for every hyperparam
     """
-
     def __init__(self, hparams, codes_dim):
         self.name = "NIG"
         self.dim = codes_dim
@@ -187,7 +183,8 @@ class NIG_prior:
         if self.prior_sigma_choice == "iso_0001":
             self.nig_sigma_sq_0 = torch.ones(self.dim) * 0.0001
 
-        self.nig_b = torch.ones(self.dim) * (hparams.NIW_prior_nu * self.nig_sigma_sq_0 / 2.0)
+        self.nig_b = torch.ones(
+            self.dim) * (hparams.NIW_prior_nu * self.nig_sigma_sq_0 / 2.0)
 
     def init_priors(self, codes):
         if self.prior_mu_0_choice == "data_mean":
@@ -198,9 +195,11 @@ class NIG_prior:
         N = len(codes_k)
 
         V_star = self.nig_V * (1. / (1 + self.nig_V * N))
-        m_star = V_star * (self.nig_m/self.nig_V + codes_k.sum(axis=0))
+        m_star = V_star * (self.nig_m / self.nig_V + codes_k.sum(axis=0))
         a_star = self.nig_a + N / 2.
-        b_star = self.nig_b + 0.5 * ((self.nig_m ** 2) / self.nig_V + (codes_k ** 2).sum(axis=0) - (m_star ** 2) / V_star)
+        b_star = self.nig_b + 0.5 * ((self.nig_m**2) / self.nig_V +
+                                     (codes_k**2).sum(axis=0) -
+                                     (m_star**2) / V_star)
         return V_star, m_star, a_star, b_star
 
     def compute_post_mus(self, N_ks, data_mus):
@@ -210,9 +209,9 @@ class NIG_prior:
         # )
 
         # for each K we are going to have mu in R^D
-        return ((N_ks.reshape(-1, 1) * data_mus) + (1 / self.nig_V * self.nig_m)) / (
-            N_ks.reshape(-1, 1) + 1 / self.nig_V
-        )
+        return ((N_ks.reshape(-1, 1) * data_mus) +
+                (1 / self.nig_V * self.nig_m)) / (N_ks.reshape(-1, 1) +
+                                                  1 / self.nig_V)
 
     def compute_post_cov(self, N_ks, mus, data_stds):
         # If it is hard assignments: N_k is the number of points assigned to cluster K, x_mean is their average
@@ -222,10 +221,8 @@ class NIG_prior:
         # data_std is a d-dimentional tensor with data_std[d] is the weighted std along dimention d
         if N_ks > 0:
             post_sigma_sq = (
-                data_stds * N_ks
-                + 2 * self.nig_b
-                + 1 / self.nig_V * ((self.nig_m - mus) ** 2)
-            ) / (N_ks + 2 * self.nig_a + 3)
+                data_stds * N_ks + 2 * self.nig_b + 1 / self.nig_V *
+                ((self.nig_m - mus)**2)) / (N_ks + 2 * self.nig_a + 3)
             return post_sigma_sq
         else:
             return torch.eye(mus.shape[1]) * self.nig_sigma_sq_0
@@ -233,7 +230,8 @@ class NIG_prior:
     def log_marginal_likelihood(self, codes_k, mu_k):
         # Hard assignment
         # Since we consider the channels to be independent, the log likelihood will be the sum of log likelihood per channel
-        V_star, m_star, a_star, b_star = self.compute_params_post(codes_k, mu_k)
+        V_star, m_star, a_star, b_star = self.compute_params_post(
+            codes_k, mu_k)
         N = len(codes_k)
         lm_ll = 0
         for d in range(self.dim):
