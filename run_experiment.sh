@@ -1,0 +1,15 @@
+python DeepDPM.py --dataset particles_select01 \
+ --dir "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data" \
+ --seed 12345 \
+ --use_labels_for_eval \
+ --save_checkpoints \
+ --max_epochs 500 \
+ --init_k 1 \
+ --start_sub_clustering 45 \
+ --start_splitting 55 \
+ --split_merge_every_n_epochs 30 \
+ --exp_name run_20230228 \
+ --NIW_prior_nu 130 \
+ --prior_sigma_scale 0.05 \
+ --alpha 20 \
+ --gpus 1,2,3,4,5,6,7
