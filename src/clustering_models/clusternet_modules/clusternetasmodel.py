@@ -1069,9 +1069,8 @@ class ClusterNetModel(pl.LightningModule):
                  on_epoch=True,
                  on_step=False)
 
-        if self.hparams.offline and (
-            (self.hparams.log_metrics_at_train and stage == "train") or
-            (not self.hparams.log_metrics_at_train and stage != "train")):
+        if (self.hparams.log_metrics_at_train and stage == "train") or \
+            (not self.hparams.log_metrics_at_train and stage != "train"):
             print(
                 f"NMI : {gt_nmi}, ARI: {ari}, ACC: {acc}, current K: {unique_z}"
             )

@@ -7,9 +7,7 @@
 import argparse
 from argparse import ArgumentParser
 import os
-from pytorch_lightning.loggers.neptune import NeptuneLogger
-from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
-from pytorch_lightning.loggers.base import DummyLogger
+from pytorch_lightning.loggers.wandb import WandbLogger
 import pytorch_lightning as pl
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from sklearn.metrics import adjusted_rand_score as ARI
@@ -37,7 +35,7 @@ def parse_minimal_args(parser):
     parser.add_argument("--lr",
                         type=float,
                         default=0.002,
-                        help="learning rate (default: 1e-4)")
+                        help="learning rate (default: 2e-3)")
     parser.add_argument("--batch-size",
                         type=int,
                         default=128,
@@ -48,42 +46,24 @@ def parse_minimal_args(parser):
         default=None,
         help="random seed",
     )
-    parser.add_argument("--n-jobs",
-                        type=int,
-                        default=1,
-                        help="number of jobs to run in parallel")
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda",
-        help="device for computation (default: cpu)",
-    )
-    parser.add_argument("--offline",
-                        action="store_true",
-                        help="Run training without Neptune Logger")
-    parser.add_argument(
-        "--tag",
-        type=str,
-        default="MNIST_UMAPED",
-    )
     parser.add_argument(
         "--max_epochs",
         type=int,
         default=500,
     )
-    parser.add_argument("--limit_train_batches",
-                        type=float,
-                        default=1.,
-                        help="used for debugging")
-    parser.add_argument("--limit_val_batches",
-                        type=float,
-                        default=1.,
-                        help="used for debugging")
     parser.add_argument("--save_checkpoints", action="store_true")
     parser.add_argument("--exp_name", type=str, default="default_exp")
     parser.add_argument("--use_labels_for_eval",
                         action="store_true",
                         help="whether to use labels for evaluation")
+    parser.add_argument("--gpus", default=None)
+
+    # added arguments
+    parser.add_argument("--project",
+                        type=str,
+                        default="DeepDPM",
+                        help="wandb project name")
+
     return parser
 
 
@@ -387,7 +367,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=bool,
         default=True,
     )
-    parser.add_argument("--gpus", default=None)
     parser.add_argument("--evaluate_every_n_epochs",
                         type=int,
                         default=5,
@@ -395,7 +374,7 @@ def run_on_embeddings_hyperparams(parent_parser):
     return parser
 
 
-def need_resume(checkpoint_dir: str)->Optional[str]:
+def need_resume(checkpoint_dir: str) -> Optional[str]:
     if not os.path.exists(checkpoint_dir):
         print(f"No such file or directory: {checkpoint_dir}. Skip resuming")
         return None
@@ -437,11 +416,10 @@ def train_cluster_net():
 
     tags = ['umap_embbeded_dataset']
 
-    if args.offline:
-        logger = DummyLogger()
-    else:
-        logger = TensorBoardLogger(save_dir="tb_logs",
-                                   name=args.exp_name)
+    logger = WandbLogger(save_dir="wandb",
+                         offline=True,
+                         project=args.project,
+                         name=args.exp_name)
 
     check_args(args, dataset_obj.data_dim)
 
@@ -471,9 +449,8 @@ def train_cluster_net():
                          gpus=args.gpus,
                          num_sanity_val_steps=0,
                          checkpoint_callback=checkpoint_callback,
-                         limit_train_batches=args.limit_train_batches,
-                         limit_val_batches=args.limit_val_batches,
-                         resume_from_checkpoint=need_resume(f"./saved_models/{args.dataset}/{args.exp_name}"),
+                         resume_from_checkpoint=need_resume(
+                             f"./saved_models/{args.dataset}/{args.exp_name}"),
                          progress_bar_refresh_rate=0)
     trainer.fit(model, train_loader, val_loader)
 
