@@ -134,7 +134,7 @@ dmypy.json
 
 saved_models
 
-wandb
+tensorboard
 
 errors
 outputs

@@ -208,7 +208,6 @@ class training_utils:
         codes_dim,
         model_covs=None,
         pi=None,
-        logger=None,
     ):
         if self.hparams.cluster_loss == "isotropic":
             # Isotropic

@@ -7,28 +7,22 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from typing import Optional
 
 class MLP_Classifier(nn.Module):
     def __init__(
         self,
         hparams,
-        codes_dim=320,
-        k=None,
-        weights_fc1=None,
-        weights_fc2=None,
-        bias_fc1=None,
-        bias_fc2=None,
+        codes_dim:int=320,
+        k:Optional[int]=None,
     ):
         super(MLP_Classifier, self).__init__()
-        if k is None:
-            self.k = hparams.init_k
-        else:
-            self.k = k
 
-        self.codes_dim = codes_dim
-        self.hidden_dims = hparams.clusternet_hidden_layer_list
-        self.last_dim = self.hidden_dims[-1]
+        self.k:int = hparams.init_k if k is None else k
+
+        self.codes_dim:int = codes_dim
+        self.hidden_dims:int = hparams.clusternet_hidden_layer_list
+        self.last_dim:int = self.hidden_dims[-1]
         self.class_fc1 = nn.Linear(self.codes_dim, self.hidden_dims[0])
         hidden_modules = []
         for i in range(len(self.hidden_dims) - 1):
@@ -37,32 +31,9 @@ class MLP_Classifier(nn.Module):
             hidden_modules.append(nn.ReLU())
         self.hidden_layers = nn.Sequential(*hidden_modules)
         self.class_fc2 = nn.Linear(self.hidden_dims[-1], self.k)
-        print(self.hidden_layers)
-
-        if weights_fc1 is not None:
-            self.class_fc1.weight.data = weights_fc1
-        if weights_fc2 is not None:
-            self.class_fc2.weight.data = weights_fc2
-        if bias_fc1 is not None:
-            self.class_fc1.bias.data = bias_fc1
-        if bias_fc2 is not None:
-            self.class_fc2.bias.data = bias_fc2
+        # print(self.hidden_layers)
 
         self.softmax_norm = hparams.softmax_norm
-
-    def _check_nan(self, x, num):
-        if torch.isnan(x).any():
-            print(f"forward {num}")
-            if torch.isnan(self.class_fc1.weight.data).any():
-                print("fc1 weights contain nan")
-            elif torch.isnan(self.class_fc1.bias.data).any():
-                print("fc1 bias contain nan")
-            elif torch.isnan(self.class_fc2.weight.data).any():
-                print("fc2 weights contain nan")
-            elif torch.isnan(self.class_fc2.bias.data).any():
-                print("fc2 bias contain nan")
-            else:
-                print("no weights are nan!")
 
     def forward(self, x):
         x = x.view(-1, self.codes_dim)
@@ -239,72 +210,6 @@ class MLP_Classifier(nn.Module):
             raise NotImplementedError
 
 
-class Subclustering_net_duplicating(nn.Module):
-    def __init__(self, hparams, codes_dim=320, k=None):
-        super(MLP_Classifier, self).__init__()
-        if k is None:
-            self.K = hparams.init_k
-        else:
-            self.K = k
-
-        self.codes_dim = codes_dim
-        self.hparams = hparams
-        self.hidden_dim = 50
-        self.softmax_norm = self.hparams.subcluster_softmax_norm
-
-        # the subclustering net will be a stacked version of the clustering net
-        self.class_fc1 = nn.Linear(self.codes_dim * self.K,
-                                   self.hidden_dim * self.K)
-        self.class_fc2 = nn.Linear(self.hidden_dim * self.K, 2 * self.K)
-
-        gradient_mask_fc1 = torch.ones(self.codes_dim * self.K,
-                                       self.hidden_dim * self.K)
-        gradient_mask_fc2 = torch.ones(self.hidden_dim * self.K, 2 * self.K)
-        # detach different subclustering nets - zeroing out the weights connecting between different subnets
-        # and also zero their gradient
-        for k in range(self.K):
-            # row are the output neurons and columns are of the input ones
-            # before
-            self.class_fc1.weight.data[self.hidden_dim * k:self.hidden_dim *
-                                       (k + 1), :self.codes_dim * k] = 0
-            gradient_mask_fc1[self.hidden_dim * k:self.hidden_dim *
-                              (k + 1), :self.codes_dim * k] = 0
-            self.class_fc2.weight.data[2 * k:2 * (k + 1), :self.hidden_dim *
-                                       k] = 0
-            gradient_mask_fc2[2 * k:2 * (k + 1), :self.hidden_dim * k] = 0
-            # after
-            self.class_fc1.weight.data[self.hidden_dim * k:self.hidden_dim *
-                                       (k + 1), :self.codes_dim * (k + 1)] = 0
-            gradient_mask_fc1[self.hidden_dim * k:self.hidden_dim *
-                              (k + 1), :self.codes_dim * (k + 1)] = 0
-            self.class_fc2.weight.data[2 * k:2 * (k + 1), :self.hidden_dim *
-                                       (k + 1)] = 0
-            gradient_mask_fc2[2 * k:2 * (k + 1), :self.hidden_dim *
-                              (k + 1)] = 0
-
-        self.class_fc1.weight.register_hook(
-            lambda grad: grad.mul_(gradient_mask_fc1))
-        self.class_fc2.weight.register_hook(
-            lambda grad: grad.mul_(gradient_mask_fc2))
-        # weights are zero and their grad will always be 0 so won't change
-
-    def forward(self, X, hard_assign):
-        X = self.reshape_input(X, hard_assign)
-        X = F.relu(self.class_fc1(X))
-        X = self.class_fc2(X)
-        X = torch.mul(X, self.softmax_norm)
-        return F.softmax(X, dim=1)
-
-    def reshape_input(self, X, hard_assign):
-        # each input (batch_size X codes_dim) will be padded with zeros to insert to the stacked subnets
-        X = X.view(-1, self.codes_dim)
-        new_batch = torch.zeros(X.size(0), self.K, X.size(1))
-        for k in range(self.K):
-            new_batch[hard_assign == k, k, :] = X[hard_assign == k]
-        new_batch = new_batch.view(X.size(0), -1)  # in s_batch X d * K
-        return new_batch
-
-
 class Subclustering_net(nn.Module):
     # Duplicate only inner layer
     # SHAPE is input dim -> 50 * K -> 2 * K
@@ -312,7 +217,7 @@ class Subclustering_net(nn.Module):
                  hparams,
                  codes_dim: int = 320,
                  hidden_dim: int = 50,
-                 k: int = None):
+                 k: Optional[int] = None):
         super(Subclustering_net, self).__init__()
         if k is None:
             self.K: int = hparams.init_k
@@ -639,27 +544,3 @@ class Subclustering_net(nn.Module):
             return bias_list[torch.round(torch.rand(1)).int().item()]
         else:
             raise NotImplementedError
-
-
-class Conv_Classifier(nn.Module):
-    def __init__(self, hparams):
-        super(Conv_Classifier, self).__init__()
-        self.hparams = hparams
-
-        raise NotImplementedError("Need to implement split merge operations!")
-
-        # classifier
-        self.class_conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.class_conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.class_conv2_drop = nn.Dropout2d()
-        self.class_fc1 = nn.Linear(320, 50)
-        self.class_fc2 = nn.Linear(50, hparams.init_k)
-
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.class_conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.class_conv2_drop(self.class_conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.class_fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.class_fc2(x)
-        return F.softmax(x, dim=1)

@@ -5,10 +5,11 @@
 #
 
 import argparse
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 import os
-from pytorch_lightning.loggers.wandb import WandbLogger
+from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 import pytorch_lightning as pl
+from pytorch_lightning.utilities import seed
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from sklearn.metrics import adjusted_rand_score as ARI
 import numpy as np
@@ -400,34 +401,7 @@ def need_resume(checkpoint_dir: str) -> Optional[str]:
     return checkpoint_path
 
 
-def train_cluster_net():
-    parser = argparse.ArgumentParser(description="Only_for_embbedding")
-    parser = parse_minimal_args(parser)
-    parser = run_on_embeddings_hyperparams(parser)
-    args = parser.parse_args()
-
-    args.train_cluster_net = args.max_epochs
-
-    if args.dataset == "synthetic":
-        dataset_obj = GMM_dataset(args)
-    else:
-        dataset_obj = CustomDataset(args)
-    train_loader, val_loader = dataset_obj.get_loaders()
-
-    logger = WandbLogger(offline=True,
-                         project=args.project,
-                         name=args.exp_name)
-
-    check_args(args, dataset_obj.data_dim)
-
-    # Main body
-    if args.seed:
-        pl.utilities.seed.seed_everything(args.seed)
-
-    model = ClusterNetModel(hparams=args,
-                            input_dim=dataset_obj.data_dim,
-                            init_k=args.init_k)
-
+def get_checkpoint_callback(args: Namespace):
     if args.save_checkpoints:
         from pytorch_lightning.callbacks import ModelCheckpoint
         checkpoint_callback = ModelCheckpoint(
@@ -441,11 +415,42 @@ def train_cluster_net():
     else:
         checkpoint_callback = False
 
+    return checkpoint_callback
+
+
+def get_args() -> Namespace:
+    parser = argparse.ArgumentParser(description="Only_for_embbedding")
+    parser = parse_minimal_args(parser)
+    parser = run_on_embeddings_hyperparams(parser)
+    args = parser.parse_args()
+    args.train_cluster_net = args.max_epochs
+    return args
+
+
+def train_cluster_net():
+    args = get_args()
+
+    dataset_obj = GMM_dataset(
+        args) if args.dataset == "synthetic" else CustomDataset(args)
+
+    train_loader, val_loader = dataset_obj.get_loaders()
+
+    check_args(args, dataset_obj.data_dim)
+
+    logger = TensorBoardLogger(save_dir="tensorboard",
+                               name=args.project + "-" + args.exp_name)
+
+    seed.seed_everything(args.seed)
+
+    model = ClusterNetModel(hparams=args,
+                            input_dim=dataset_obj.data_dim,
+                            init_k=args.init_k)
+
     trainer = pl.Trainer(logger=logger,
                          max_epochs=args.max_epochs,
                          gpus=args.gpus,
                          num_sanity_val_steps=0,
-                         checkpoint_callback=checkpoint_callback,
+                         checkpoint_callback=get_checkpoint_callback(args),
                          resume_from_checkpoint=need_resume(
                              f"./saved_models/{args.dataset}/{args.exp_name}"),
                          progress_bar_refresh_rate=0)

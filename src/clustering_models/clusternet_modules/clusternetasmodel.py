@@ -35,9 +35,9 @@ from typing import Dict, Any, Optional
 class ClusterNetModel(pl.LightningModule):
     def __init__(self,
                  hparams,
-                 input_dim:int,
-                 init_k:int,
-                 n_sub:int=2,
+                 input_dim: int,
+                 init_k: int,
+                 n_sub: int = 2,
                  centers=None,
                  init_num=0):
         """The main class of the unsupervised clustering scheme.
@@ -60,8 +60,6 @@ class ClusterNetModel(pl.LightningModule):
         self.split_performed = False  # indicator to know whether a split was performed
         self.merge_performed = False
         self.centers = centers
-        if self.hparams.seed:
-            pl.utilities.seed.seed_everything(self.hparams.seed)
 
         # initialize cluster_net
         self.cluster_net = MLP_Classifier(hparams,
@@ -70,8 +68,7 @@ class ClusterNetModel(pl.LightningModule):
 
         if not self.hparams.ignore_subclusters:
             # initialize subclustering net
-            self.subclustering_net = Subclustering_net(
-                hparams, codes_dim=self.codes_dim, k=self.K)
+            self.subclustering_net = Subclustering_net(hparams, codes_dim=self.codes_dim, k=self.K)
         else:
             self.subclustering_net = None
         self.last_key = self.K - 1  # variable to help with indexing the dict
@@ -97,48 +94,7 @@ class ClusterNetModel(pl.LightningModule):
         self.save_hyperparameters()
 
     def forward(self, x):
-        codes = x
-        return self.cluster_net(codes)
-
-    def on_save_checkpoint(self, checkpoint) -> None:
-
-        attributes = [
-            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
-            "freeze_mus_after_init_until", "plot_utils", "prior"
-        ]
-
-        for attr in attributes:
-            if hasattr(self, attr):
-                checkpoint[attr] = getattr(self, attr)
-
-        return super().on_save_checkpoint(checkpoint)
-
-    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        # print("{}".format(checkpoint["state_dict"].keys()))
-        attributes = [
-            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
-            "freeze_mus_after_init_until", "plot_utils", "prior"
-        ]
-
-        maybe_mismateched_parameters = [
-            'cluster_net.class_fc1.weight', 'cluster_net.class_fc1.bias',
-            'cluster_net.class_fc2.weight', 'cluster_net.class_fc2.bias',
-            'subclustering_net.class_fc1.weight',
-            'subclustering_net.class_fc1.bias',
-            'subclustering_net.class_fc2.weight',
-            'subclustering_net.class_fc2.bias'
-        ]
-
-        for t in maybe_mismateched_parameters:
-            state_dict = checkpoint["state_dict"]
-            with torch.no_grad():
-                self.get_parameter(t).data = torch.empty_like(state_dict[t])
-                # print(f"{t} shape:{self.get_parameter(t).shape}")
-
-        for attr in attributes:
-            if attr in checkpoint.keys():
-                self.__setattr__(attr, checkpoint[attr])
-        return super().on_load_checkpoint(checkpoint)
+        return self.cluster_net(x)
 
     def on_train_epoch_start(self):
         # get current training_stage
@@ -146,9 +102,9 @@ class ClusterNetModel(pl.LightningModule):
             "gather_codes" if self.current_epoch == 0
             and not hasattr(self, "mus") else "train_cluster_net")
         self.initialize_net_params(stage="train")
-        if self.split_performed or self.merge_performed:
-            self.split_performed = False
-            self.merge_performed = False
+
+        self.split_performed = False
+        self.merge_performed = False
 
     def on_validation_epoch_start(self):
         self.initialize_net_params(stage="val")
@@ -160,9 +116,9 @@ class ClusterNetModel(pl.LightningModule):
             if self.current_epoch > 0:
                 del self.train_resp, self.train_resp_sub, self.train_gt
 
-            self.train_resp = []
-            self.train_resp_sub = []
-            self.train_gt = []
+            self.train_resp = []  # (n,dim_features)
+            self.train_resp_sub = []  # (n,2*K)
+            self.train_gt = []  # (n,)
         elif stage == "val":
             if self.current_epoch > 0:
                 del self.val_resp, self.val_resp_sub, self.val_gt
@@ -173,15 +129,11 @@ class ClusterNetModel(pl.LightningModule):
             raise NotImplementedError()
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
-        x, y = batch
-        codes = x
-
+        codes, y = batch
         if self.current_training_stage == "gather_codes":
             return self.only_gather_codes(codes, y, optimizer_idx)
-
         elif self.current_training_stage == "train_cluster_net":
-            return self.cluster_net_pretraining(codes, y, optimizer_idx,
-                                                x if batch_idx == 0 else None)
+            return self.cluster_net_pretraining(codes, y, optimizer_idx)
         else:
             raise NotImplementedError()
 
@@ -211,18 +163,15 @@ class ClusterNetModel(pl.LightningModule):
             )
         return None
 
-    def cluster_net_pretraining(self,
-                                codes: Tensor,
-                                y: Tensor,
-                                optimizer_idx: int,
-                                x_for_vis=None):
+    def cluster_net_pretraining(self, codes: Tensor, y: Tensor,
+                                optimizer_idx: int):
         """Pretraining function for the clustering and subclustering nets.
-        At this stage, the only loss is the cluster and subcluster loss. The autoencoder weights are held constant.
+        At this stage, the only loss is the cluster and subcluster loss.
 
         Args:
-            codes ([type]): The encoded data samples
-            y: The ground truth labels
-            optimizer_idx ([type]): The pytorch optimizer index
+            codes (Tensor): The encoded data samples (n_batch,dim_features)
+            y (Tensor): The ground truth labels (n_batch,)
+            optimizer_idx (int): The pytorch optimizer index
         """
         codes = codes.view(-1, self.codes_dim)  # (n_batch,codes_dim)
         logits: Tensor = self.cluster_net(codes)  # (n_batch,K)
@@ -234,8 +183,8 @@ class ClusterNetModel(pl.LightningModule):
             codes_dim=self.codes_dim,
             model_covs=self.covs
             if self.hparams.cluster_loss in ("diag_NIG", "KL_GMM_2") else None,
-            pi=self.pi,
-            logger=self.logger)
+            pi=self.pi)
+        
         self.log(
             "cluster_net_train/train/cluster_loss",
             self.hparams.cluster_loss_weight * cluster_loss,
@@ -1104,3 +1053,43 @@ class ClusterNetModel(pl.LightningModule):
                      unique_z,
                      on_epoch=True,
                      on_step=False)
+
+    def on_save_checkpoint(self, checkpoint) -> None:
+
+        attributes = [
+            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
+            "freeze_mus_after_init_until", "plot_utils", "prior"
+        ]
+
+        for attr in attributes:
+            if hasattr(self, attr):
+                checkpoint[attr] = getattr(self, attr)
+
+        return super().on_save_checkpoint(checkpoint)
+
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        # print("{}".format(checkpoint["state_dict"].keys()))
+        attributes = [
+            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
+            "freeze_mus_after_init_until", "plot_utils", "prior"
+        ]
+
+        maybe_mismateched_parameters = [
+            'cluster_net.class_fc1.weight', 'cluster_net.class_fc1.bias',
+            'cluster_net.class_fc2.weight', 'cluster_net.class_fc2.bias',
+            'subclustering_net.class_fc1.weight',
+            'subclustering_net.class_fc1.bias',
+            'subclustering_net.class_fc2.weight',
+            'subclustering_net.class_fc2.bias'
+        ]
+
+        for t in maybe_mismateched_parameters:
+            state_dict = checkpoint["state_dict"]
+            with torch.no_grad():
+                self.get_parameter(t).data = torch.empty_like(state_dict[t])
+                # print(f"{t} shape:{self.get_parameter(t).shape}")
+
+        for attr in attributes:
+            if attr in checkpoint.keys():
+                self.__setattr__(attr, checkpoint[attr])
+        return super().on_load_checkpoint(checkpoint)
