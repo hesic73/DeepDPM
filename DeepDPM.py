@@ -137,10 +137,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=int,
         default=20,
     )
-    parser.add_argument("--log_emb",
-                        type=str,
-                        default="never",
-                        choices=["every_n_epochs", "only_sampled", "never"])
     parser.add_argument(
         "--train_cluster_net",
         type=int,

@@ -352,42 +352,7 @@ class ClusterNetModel(pl.LightningModule):
                     init_ari = adjusted_rand_score(gt, init_labels)
                     self.log("cluster_net_train/init_nmi", init_nmi)
                     self.log("cluster_net_train/init_ari", init_ari)
-                if self.hparams.log_emb == "every_n_epochs" and (
-                        self.current_epoch % self.hparams.log_emb_every == 0
-                        or self.current_epoch == 1):
-                    self.plot_utils.visualize_embeddings(
-                        self.hparams,
-                        self.logger,
-                        self.codes_dim,
-                        vae_means=self.codes,
-                        vae_labels=init_labels,
-                        val_resp=None,
-                        current_epoch=self.current_epoch,
-                        y_hat=None,
-                        centers=self.mus,
-                        stage="init_Kmeans")
-                if self.current_epoch == 0 and (
-                        self.hparams.log_emb
-                        in ("every_n_epochs", "only_sampled") and
-                        self.current_epoch % self.hparams.log_emb_every == 0):
-                    perm = torch.randperm(self.train_gt.size(0))
-                    idx = perm[:10000]
-                    sampled_points = self.codes[idx]
-                    sampled_labeled = self.train_gt[
-                        idx] if self.hparams.user_labels_for_eval else None
-                    self.plot_utils.visualize_embeddings(
-                        self.hparams,
-                        self.logger,
-                        self.codes_dim,
-                        vae_means=sampled_points,
-                        vae_labels=sampled_labeled,
-                        val_resp=None,
-                        current_epoch=self.current_epoch,
-                        y_hat=None,
-                        centers=None,
-                        training_stage='train_sampled',
-                        UMAP=False)
-
+                
         else:
             # add avg loss of all losses
             if not self.hparams.ignore_subclusters:
@@ -503,44 +468,7 @@ class ClusterNetModel(pl.LightningModule):
             # compute nmi, unique z, etc.
             if self.hparams.log_metrics_at_train and self.hparams.evaluate_every_n_epochs > 0 and self.current_epoch % self.hparams.evaluate_every_n_epochs == 0:
                 self.log_clustering_metrics()
-            with torch.no_grad():
-                if self.hparams.log_emb == "every_n_epochs" and (
-                        self.current_epoch % self.hparams.log_emb_every == 0
-                        or self.current_epoch < 2):
-                    self.plot_histograms()
-                    self.plot_utils.visualize_embeddings(
-                        self.hparams,
-                        self.logger,
-                        self.codes_dim,
-                        vae_means=self.codes,
-                        vae_labels=None if not self.hparams.use_labels_for_eval
-                        else self.train_gt,
-                        val_resp=self.train_resp,
-                        current_epoch=self.current_epoch,
-                        y_hat=None,
-                        centers=self.mus,
-                        training_stage='train')
-                    if self.hparams.dataset == "synthetic":
-                        if self.split_performed or self.merge_performed:
-                            self.plot_utils.update_colors(
-                                self.split_performed, self.mus_ind_to_split,
-                                self.mus_inds_to_merge)
-                        elif self.hparams.use_labels_for_eval:
-                            self.plot_utils.plot_cluster_and_decision_boundaries(
-                                samples=self.codes,
-                                labels=self.train_resp.argmax(-1),
-                                gt_labels=self.train_gt,
-                                net_centers=self.mus,
-                                net_covs=self.covs,
-                                n_epoch=self.current_epoch,
-                                cluster_net=self)
-                    if self.current_epoch in (
-                            0, 1, 2, 3, 4, 5, 10, 100, 200, 300, 400, 500, 549,
-                            self.hparams.start_sub_clustering,
-                            self.hparams.start_sub_clustering +
-                            1) or self.split_performed or self.merge_performed:
-                        self.plot_histograms(for_thesis=True)
-
+                
         if self.split_performed or self.merge_performed:
             self.update_params_split_merge()
             print("Current number of clusters: ", self.K)
@@ -563,21 +491,6 @@ class ClusterNetModel(pl.LightningModule):
             if not (self.split_performed or self.merge_performed
                     ) and self.hparams.log_metrics_at_train:
                 self.log_clustering_metrics(stage="total")
-
-        if self.hparams.log_emb == "every_n_epochs" and self.current_epoch % 10 == 0 and len(
-                self.val_gt) > 10:
-            # not mock data
-            self.plot_utils.visualize_embeddings(
-                self.hparams,
-                self.logger,
-                self.codes_dim,
-                vae_means=self.codes,
-                vae_labels=self.val_gt,
-                val_resp=self.val_resp if self.val_resp != [] else None,
-                current_epoch=self.current_epoch,
-                y_hat=None,
-                centers=None,
-                training_stage="val_thesis")
 
         if self.current_epoch > self.hparams.start_sub_clustering and (
                 self.current_epoch % 50 == 0
@@ -900,41 +813,6 @@ class ClusterNetModel(pl.LightningModule):
         if not isinstance(self.logger, DummyLogger):
             self.logger.log_image(
                 f"cluster_net_train/{stage}/clusters_weights_fig", fig)
-        plt.close(fig)
-
-    def plot_clusters_high_dim(self, stage="train"):
-        resps = {
-            "train": (self.train_resp, self.train_resp_sub),
-            "val": (self.val_resp, self.val_resp_sub),
-        }
-        gt = {"train": self.train_gt, "val": self.val_gt}
-        (resp, resp_sub) = resps[stage]
-        cluster_net_labels = self.training_utils.update_labels_after_split_merge(
-            resp.argmax(-1),
-            self.split_performed,
-            self.merge_performed,
-            self.mus,
-            self.mus_ind_to_split,
-            self.mus_inds_to_merge,
-            resp_sub,
-        )
-        fig = self.plot_utils.plot_clusters_colored_by_label(
-            samples=self.codes,
-            y_gt=gt[stage],
-            n_epoch=self.current_epoch,
-            K=len(torch.unique(gt[stage])),
-        )
-        plt.close(fig)
-        self.logger.log_image(
-            f"cluster_net_train/{stage}/clusters_fig_gt_labels", fig)
-        fig = self.plot_utils.plot_clusters_colored_by_net(
-            samples=self.codes,
-            y_net=cluster_net_labels,
-            n_epoch=self.current_epoch,
-            K=len(torch.unique(cluster_net_labels)),
-        )
-        self.logger.log_image(
-            "cluster_net_train/train/clusters_fig_net_labels", fig)
         plt.close(fig)
 
     def log_clustering_metrics(self, stage="train"):
