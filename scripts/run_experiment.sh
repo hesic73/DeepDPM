@@ -1,10 +1,14 @@
 #!/bin/bash
 
-MINIMAL_ARGS="--dataset MNIST \
+PROJECT=DeepDPM_CNG
+EXP_NAME=test1
+DATASET=CNG
+
+MINIMAL_ARGS="--dataset "$DATASET" \
 --dir ./pretrained_embeddings/umap_embedded_datasets/MNIST \
 --seed 12345 \
---project DeepDPM_mnist \
---exp_name test \
+--project "$PROJECT" \
+--exp_name "$EXP_NAME" \
 --use_labels_for_eval \
 --save_checkpoints \
 --max_epochs 500 \

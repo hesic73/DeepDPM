@@ -24,13 +24,14 @@ import logging
 
 logging.getLogger("lightning").setLevel(logging.ERROR)
 
+def get_dataset_directory(dataset_name:str)->str:
+    if dataset_name=='CNG':
+        return "./pretrained_embeddings/umap_embedded_datasets/"
+    else:
+        raise NotImplementedError
 
 def parse_minimal_args(parser):
     # Dataset parameters
-    parser.add_argument(
-        "--dir",
-        default="./pretrained_embeddings/umap_embedded_datasets/",
-        help="dataset directory")
     parser.add_argument("--dataset", default="custom")
     # Training parameters
     parser.add_argument("--lr",
@@ -131,17 +132,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=str,
         choices=["kmeans", "soft_assign", "kmeans_1d"],
         default="kmeans_1d",
-    )
-    parser.add_argument(
-        "--log_emb_every",
-        type=int,
-        default=20,
-    )
-    parser.add_argument(
-        "--train_cluster_net",
-        type=int,
-        default=300,
-        help="Number of epochs to pretrain the cluster net",
     )
     parser.add_argument(
         "--cluster_lr",
@@ -420,6 +410,7 @@ def get_args() -> Namespace:
     parser = run_on_embeddings_hyperparams(parser)
     args = parser.parse_args()
     args.train_cluster_net = args.max_epochs
+    args.dir=get_dataset_directory(args.dataset)
     return args
 
 
