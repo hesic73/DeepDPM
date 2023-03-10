@@ -414,10 +414,7 @@ def train_cluster_net():
         dataset_obj = CustomDataset(args)
     train_loader, val_loader = dataset_obj.get_loaders()
 
-    tags = ['umap_embbeded_dataset']
-
-    logger = WandbLogger(save_dir="wandb",
-                         offline=True,
+    logger = WandbLogger(offline=True,
                          project=args.project,
                          name=args.exp_name)
 

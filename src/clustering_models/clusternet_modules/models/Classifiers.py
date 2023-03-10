@@ -161,7 +161,7 @@ class MLP_Classifier(nn.Module):
             self.class_fc2 = class_fc2
 
     def _initalize_weights_split(self,
-                                 weight:torch.Tensor,
+                                 weight: torch.Tensor,
                                  split_decisions,
                                  init_new_weight,
                                  subclusters_nets=None):
@@ -308,12 +308,16 @@ class Subclustering_net_duplicating(nn.Module):
 class Subclustering_net(nn.Module):
     # Duplicate only inner layer
     # SHAPE is input dim -> 50 * K -> 2 * K
-    def __init__(self, hparams, codes_dim:int=320, hidden_dim:int=50, k:int=None):
+    def __init__(self,
+                 hparams,
+                 codes_dim: int = 320,
+                 hidden_dim: int = 50,
+                 k: int = None):
         super(Subclustering_net, self).__init__()
         if k is None:
-            self.K:int = hparams.init_k
+            self.K: int = hparams.init_k
         else:
-            self.K:int = k
+            self.K: int = k
 
         self.codes_dim: int = codes_dim
         self.hparams = hparams
@@ -327,23 +331,23 @@ class Subclustering_net(nn.Module):
         self.class_fc1 = nn.Linear(self.codes_dim, self.hidden_dim * self.K)
         self.class_fc2 = nn.Linear(self.hidden_dim * self.K, 2 * self.K)
 
-        gradient_mask_fc2 = torch.zeros(2 * self.K,
-                                        self.hidden_dim * self.K)
+        gradient_mask_fc2 = torch.zeros(2 * self.K, self.hidden_dim * self.K)
         # detach different subclustering nets - zeroing out the weights connecting between different subnets
         # and also zero their gradient
         for k in range(self.K):
             gradient_mask_fc2[2 * k:2 * (k + 1), self.hidden_dim *
                               k:self.hidden_dim * (k + 1)] = 1
 
-        gradient_mask_fc2.to(self.device)
-
+        self.class_fc1.to(self.device)
+        self.class_fc2.to(self.device)
+        gradient_mask_fc2 = gradient_mask_fc2.to(self.device)
 
         self.class_fc2.weight.data *= gradient_mask_fc2
         self.class_fc2.weight.register_hook(
             lambda grad: grad.mul_(gradient_mask_fc2))
         # weights are zero and their grad will always be 0 so won't change
 
-    def forward(self, X:torch.Tensor):
+    def forward(self, X: torch.Tensor):
         # X (n,codes_dim)
         # Note that there is no softmax here
         X = F.relu(self.class_fc1(X))

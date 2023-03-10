@@ -8,7 +8,7 @@
 #SBATCH -J hsc_job
 #SBATCH --nodes=1 
 #SBATCH --ntasks-per-node=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 
 
 #SBATCH --mail-user hesicheng2001@163.com

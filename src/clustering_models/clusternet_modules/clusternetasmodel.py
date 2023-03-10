@@ -4,7 +4,6 @@
 # Copyright (c) 2022 Meitar Ronen
 #
 
-from argparse import ArgumentParser
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -30,16 +29,15 @@ from src.clustering_models.clusternet_modules.utils.clustering_utils.split_merge
 )
 from src.clustering_models.clusternet_modules.models.Classifiers import MLP_Classifier, Subclustering_net
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class ClusterNetModel(pl.LightningModule):
     def __init__(self,
                  hparams,
-                 input_dim,
-                 init_k,
-                 feature_extractor=None,
-                 n_sub=2,
+                 input_dim:int,
+                 init_k:int,
+                 n_sub:int=2,
                  centers=None,
                  init_num=0):
         """The main class of the unsupervised clustering scheme.
@@ -50,7 +48,6 @@ class ClusterNetModel(pl.LightningModule):
             input_dim (int): the shape of the input data
             train_dl (DataLoader): The dataloader to train on
             init_k (int): The initial K to start the net with
-            feature_extractor (nn.Module): The feature extractor to get codes with
             n_sub (int, optional): Number of subclusters per cluster. Defaults to 2.
 
         """
@@ -62,7 +59,6 @@ class ClusterNetModel(pl.LightningModule):
         self.codes_dim = input_dim
         self.split_performed = False  # indicator to know whether a split was performed
         self.merge_performed = False
-        self.feature_extractor = feature_extractor
         self.centers = centers
         if self.hparams.seed:
             pl.utilities.seed.seed_everything(self.hparams.seed)
@@ -101,14 +97,7 @@ class ClusterNetModel(pl.LightningModule):
         self.save_hyperparameters()
 
     def forward(self, x):
-        if self.feature_extractor is not None:
-            with torch.no_grad():
-                codes = torch.from_numpy(
-                    self.feature_extractor(x.view(x.size()[0], -1),
-                                           latent=True)).to(device=self.device)
-        else:
-            codes = x
-
+        codes = x
         return self.cluster_net(codes)
 
     def on_save_checkpoint(self, checkpoint) -> None:
@@ -125,7 +114,7 @@ class ClusterNetModel(pl.LightningModule):
         return super().on_save_checkpoint(checkpoint)
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        print("{}".format(checkpoint["state_dict"].keys()))
+        # print("{}".format(checkpoint["state_dict"].keys()))
         attributes = [
             "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
             "freeze_mus_after_init_until", "plot_utils", "prior"
@@ -166,14 +155,6 @@ class ClusterNetModel(pl.LightningModule):
         return super().on_validation_epoch_start()
 
     def initialize_net_params(self, stage):
-        """_summary_
-
-        Args:
-            stage (str): "train" or "val"
-
-        Raises:
-            NotImplementedError: invalid stage
-        """
         self.codes = []
         if stage == "train":
             if self.current_epoch > 0:
@@ -193,13 +174,7 @@ class ClusterNetModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         x, y = batch
-        if self.feature_extractor is not None:
-            with torch.no_grad():
-                codes = torch.from_numpy(
-                    self.feature_extractor(x.view(x.size()[0], -1),
-                                           latent=True)).to(device=self.device)
-        else:
-            codes = x
+        codes = x
 
         if self.current_training_stage == "gather_codes":
             return self.only_gather_codes(codes, y, optimizer_idx)
@@ -207,7 +182,6 @@ class ClusterNetModel(pl.LightningModule):
         elif self.current_training_stage == "train_cluster_net":
             return self.cluster_net_pretraining(codes, y, optimizer_idx,
                                                 x if batch_idx == 0 else None)
-
         else:
             raise NotImplementedError()
 
@@ -320,13 +294,7 @@ class ClusterNetModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        if self.feature_extractor is not None:
-            with torch.no_grad():
-                codes = torch.from_numpy(
-                    self.feature_extractor(x.view(x.size()[0], -1),
-                                           latent=True)).to(device=self.device)
-        else:
-            codes = x
+        codes = x
 
         logits = self.cluster_net(codes)
         if batch_idx == 0 and (self.current_epoch < 5
@@ -1136,325 +1104,3 @@ class ClusterNetModel(pl.LightningModule):
                      unique_z,
                      on_epoch=True,
                      on_step=False)
-
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        parser.add_argument("--init_k",
-                            default=3,
-                            type=int,
-                            help="number of initial clusters")
-        parser.add_argument(
-            "--clusternet_hidden",
-            type=int,
-            default=50,
-            help=
-            "The dimensions of the hidden dim of the clusternet. Defaults to 50.",
-        )
-        parser.add_argument(
-            "--clusternet_hidden_layer_list",
-            type=int,
-            nargs="+",
-            default=[50],
-            help="The hidden layers in the clusternet. Defaults to [50, 50].",
-        )
-        parser.add_argument(
-            "--transform_input_data",
-            type=str,
-            default="normalize",
-            choices=[
-                "normalize", "min_max", "standard", "standard_normalize",
-                "None", None
-            ],
-            help="Use normalization for embedded data",
-        )
-        parser.add_argument(
-            "--cluster_loss_weight",
-            type=float,
-            default=1,
-        )
-        parser.add_argument(
-            "--init_cluster_net_weights",
-            action="store_true",
-            default=False,
-        )
-        parser.add_argument(
-            "--when_to_compute_mu",
-            type=str,
-            choices=["once", "every_epoch", "every_5_epochs"],
-            default="every_epoch",
-        )
-        parser.add_argument(
-            "--how_to_compute_mu",
-            type=str,
-            choices=["kmeans", "soft_assign"],
-            default="soft_assign",
-        )
-        parser.add_argument(
-            "--how_to_init_mu",
-            type=str,
-            choices=["kmeans", "soft_assign", "kmeans_1d"],
-            default="kmeans",
-        )
-        parser.add_argument(
-            "--how_to_init_mu_sub",
-            type=str,
-            choices=["kmeans", "soft_assign", "kmeans_1d"],
-            default="kmeans_1d",
-        )
-        parser.add_argument(
-            "--log_emb_every",
-            type=int,
-            default=20,
-        )
-        parser.add_argument(
-            "--log_emb",
-            type=str,
-            default="never",
-            choices=["every_n_epochs", "only_sampled", "never"])
-        parser.add_argument(
-            "--train_cluster_net",
-            type=int,
-            default=300,
-            help="Number of epochs to pretrain the cluster net",
-        )
-        parser.add_argument(
-            "--cluster_lr",
-            type=float,
-            default=0.0005,
-        )
-        parser.add_argument(
-            "--subcluster_lr",
-            type=float,
-            default=0.005,
-        )
-        parser.add_argument("--lr_scheduler",
-                            type=str,
-                            default="ReduceOnP",
-                            choices=["StepLR", "None", "ReduceOnP"])
-        parser.add_argument(
-            "--start_sub_clustering",
-            type=int,
-            default=35,
-        )
-        parser.add_argument(
-            "--subcluster_loss_weight",
-            type=float,
-            default=1.0,
-        )
-        parser.add_argument(
-            "--start_splitting",
-            type=int,
-            default=45,
-        )
-        parser.add_argument(
-            "--alpha",
-            type=float,
-            default=10.0,
-        )
-        parser.add_argument(
-            "--softmax_norm",
-            type=float,
-            default=1,
-        )
-        parser.add_argument(
-            "--subcluster_softmax_norm",
-            type=float,
-            default=1,
-        )
-        parser.add_argument(
-            "--split_prob",
-            type=float,
-            default=None,
-            help=
-            "Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
-        )
-        parser.add_argument(
-            "--merge_prob",
-            type=float,
-            default=None,
-            help=
-            "merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
-        )
-        parser.add_argument(
-            "--init_new_weights",
-            type=str,
-            default="same",
-            choices=["same", "random", "subclusters"],
-            help=
-            "How to create new weights after split. Same duplicates the old cluster's weights to the two new ones, random generate random weights and subclusters copies the weights from the subclustering net",
-        )
-        parser.add_argument(
-            "--start_merging",
-            type=int,
-            default=45,
-            help="The epoch in which to start consider merge proposals",
-        )
-        parser.add_argument(
-            "--merge_init_weights_sub",
-            type=str,
-            default="highest_ll",
-            help=
-            "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
-        )
-        parser.add_argument(
-            "--split_init_weights_sub",
-            type=str,
-            default="random",
-            choices=["same_w_noise", "same", "random"],
-            help=
-            "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
-        )
-        parser.add_argument(
-            "--split_every_n_epochs",
-            type=int,
-            default=10,
-            help=
-            "Example: if set to 10, split proposals will be made every 10 epochs",
-        )
-        parser.add_argument(
-            "--split_merge_every_n_epochs",
-            type=int,
-            default=30,
-            help=
-            "Example: if set to 10, split proposals will be made every 10 epochs",
-        )
-        parser.add_argument(
-            "--merge_every_n_epochs",
-            type=int,
-            default=10,
-            help=
-            "Example: if set to 10, merge proposals will be made every 10 epochs",
-        )
-        parser.add_argument(
-            "--raise_merge_proposals",
-            type=str,
-            default="brute_force_NN",
-            help="how to raise merge proposals",
-        )
-        parser.add_argument(
-            "--cov_const",
-            type=float,
-            default=0.005,
-            help=
-            "gmms covs (in the Hastings ratio) will be torch.eye * cov_const",
-        )
-        parser.add_argument(
-            "--freeze_mus_submus_after_splitmerge",
-            type=int,
-            default=2,
-            help=
-            "Numbers of epochs to freeze the mus and sub mus following a split or a merge step",
-        )
-        parser.add_argument(
-            "--freeze_mus_after_init",
-            type=int,
-            default=5,
-            help=
-            "Numbers of epochs to freeze the mus and sub mus following a new initialization",
-        )
-        parser.add_argument(
-            "--use_priors",
-            type=int,
-            default=1,
-            help="Whether to use priors when computing model's parameters",
-        )
-        parser.add_argument("--prior",
-                            type=str,
-                            default="NIW",
-                            choices=["NIW", "NIG"])
-        parser.add_argument("--pi_prior",
-                            type=str,
-                            default="uniform",
-                            choices=["uniform", None])
-        parser.add_argument(
-            "--prior_dir_counts",
-            type=float,
-            default=0.1,
-        )
-        parser.add_argument(
-            "--prior_kappa",
-            type=float,
-            default=0.0001,
-        )
-        parser.add_argument(
-            "--NIW_prior_nu",
-            type=float,
-            default=None,
-            help="Need to be at least codes_dim + 1",
-        )
-        parser.add_argument(
-            "--prior_mu_0",
-            type=str,
-            default="data_mean",
-        )
-        parser.add_argument(
-            "--prior_sigma_choice",
-            type=str,
-            default="isotropic",
-            choices=["iso_005", "iso_001", "iso_0001", "data_std"],
-        )
-        parser.add_argument(
-            "--prior_sigma_scale",
-            type=float,
-            default=".005",
-        )
-        parser.add_argument(
-            "--prior_sigma_scale_step",
-            type=float,
-            default=1.,
-            help="add to change sigma scale between alternations")
-        parser.add_argument(
-            "--compute_params_every",
-            type=int,
-            help=
-            "How frequently to compute the clustering params (mus, sub, pis)",
-            default=1,
-        )
-        parser.add_argument(
-            "--start_computing_params",
-            type=int,
-            help=
-            "When to start to compute the clustering params (mus, sub, pis)",
-            default=25,
-        )
-        parser.add_argument(
-            "--cluster_loss",
-            type=str,
-            help="What kind og loss to use",
-            default="KL_GMM_2",
-            choices=[
-                "diag_NIG", "isotropic", "isotropic_2", "isotropic_3",
-                "isotropic_4", "KL_GMM_2"
-            ],
-        )
-        parser.add_argument(
-            "--subcluster_loss",
-            type=str,
-            help="What kind og loss to use",
-            default="isotropic",
-            choices=["diag_NIG", "isotropic", "KL_GMM_2"],
-        )
-
-        parser.add_argument(
-            "--use_priors_for_net_params_init",
-            type=bool,
-            default=True,
-            help=
-            "when the net is re-initialized after an AE round, if centers are given, if True it will initialize the covs and the pis using the priors, if false it will compute them using min dist."
-        )
-        parser.add_argument(
-            "--ignore_subclusters",
-            type=bool,
-            default=False,
-        )
-        parser.add_argument(
-            "--log_metrics_at_train",
-            type=bool,
-            default=False,
-        )
-        parser.add_argument("--evaluate_every_n_epochs",
-                            type=int,
-                            default=5,
-                            help="How often to evaluate the net")
-        return parser
