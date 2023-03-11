@@ -113,7 +113,7 @@ class ClusterNetModel(pl.LightningModule):
         self.initialize_net_params(stage="val")
         return super().on_validation_epoch_start()
 
-    def initialize_net_params(self, stage):
+    def initialize_net_params(self, stage:str):
         self.codes = []
         if stage == "train":
             if self.current_epoch > 0:
@@ -420,6 +420,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.n_sub,
                     self.prior,
                 )
+                rank_zero_print(f"Initial pi_sub:{self.pi_sub}")
             elif (self.hparams.start_sub_clustering <= self.current_epoch
                   and not freeze_mus and not self.hparams.ignore_subclusters):
                 (
@@ -437,6 +438,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.pi_sub,
                     self.prior,
                 )
+                rank_zero_print(f"pi_sub:{self.pi_sub}")
             if perform_split and not freeze_mus:
                 rank_zero_print("perform splits")
                 # perform splits
@@ -505,10 +507,20 @@ class ClusterNetModel(pl.LightningModule):
             if not isinstance(self.logger, DummyLogger):
                 self.plot_histograms(train=False, for_thesis=True)
 
-    def subcluster(self, codes, logits, hard_assignment=True):
+    def subcluster(self, codes:Tensor, logits:Tensor):
+        """subcluster
+
+        Args:
+            codes (Tensor): (n,dim)
+            logits (Tensor): (n,k)
+
+        Returns:
+            Tensor: (n,2k) for each i in [0,n), sub_clus_resp[i,2k]+sub_clus_resp[i,2k+1]=1,
+            where k=logits[i].argmax(). sub_clus_resp[i,j]=0 for any j other than 2k and 2k+1
+        """
         # cluster codes into subclusters
-        sub_clus_resp = self.subclustering_net(codes)  # unnormalized
-        z = logits.argmax(-1)
+        sub_clus_resp = self.subclustering_net(codes)  # unnormalized (n,2k)
+        z = logits.argmax(-1) #(n)
 
         # zero out irrelevant subclusters
         mask = torch.zeros_like(sub_clus_resp)
@@ -584,6 +596,8 @@ class ClusterNetModel(pl.LightningModule):
         rank_zero_print(
             f"Splitting clusters {np.arange(self.K)[split_decisions.bool().tolist()]}"
         )
+        rank_zero_print(f"pi_sub_new:{self.pi_sub_new}")
+
         self.K += len(mus_ind_to_split)
 
         if not self.hparams.ignore_subclusters:

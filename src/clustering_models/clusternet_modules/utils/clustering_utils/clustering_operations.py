@@ -5,6 +5,7 @@
 #
 
 import torch
+from torch import Tensor
 from kmeans_pytorch import kmeans as GPU_KMeans
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -275,7 +276,16 @@ def compute_mus_soft_assignment(codes, logits, K, constant=True):
     return mus
 
 
-def compute_pi_k(logits, prior=None):
+def compute_pi_k(logits:Tensor, prior=None)->Tensor:
+    """compute pi_k
+
+    Args:
+        logits (Tensor): (N,K) for Classifier and (N,2K) for Subclustering
+        prior ({Priors}, optional): Prior. Defaults to None.
+
+    Returns:
+        Tensor: pi
+    """
     N = logits.shape[0]
     # sum for prob for each K (across all points) \sum_{i=1}^{N}P(z_i = k)
     r_sum = logits.sum(dim=0)
@@ -366,8 +376,8 @@ def compute_mus_covs_pis_subclusters(codes,
                                      mus_sub,
                                      K,
                                      n_sub,
-                                     hard_assignment=True,
-                                     use_priors=True,
+                                     hard_assignment:bool=True,
+                                     use_priors:bool=True,
                                      prior=None):
     pi_sub = compute_pi_k(logits_sub, prior=prior if use_priors else None)
     if hard_assignment:

@@ -28,10 +28,12 @@ class MLP_Classifier(nn.Module):
         for i in range(len(self.hidden_dims) - 1):
             hidden_modules.append(
                 nn.Linear(self.hidden_dims[i], self.hidden_dims[i + 1]))
+            hidden_modules.append(nn.BatchNorm1d(self.hidden_dims[i + 1]))
             hidden_modules.append(nn.ReLU())
+
         self.hidden_layers = nn.Sequential(*hidden_modules)
         self.class_fc2 = nn.Linear(self.hidden_dims[-1], self.k)
-        # print(self.hidden_layers)
+        print(self.hidden_layers)
 
         self.softmax_norm = hparams.softmax_norm
 
