@@ -30,6 +30,8 @@ from src.clustering_models.clusternet_modules.utils.clustering_utils.split_merge
 from src.clustering_models.clusternet_modules.models.Classifiers import MLP_Classifier, Subclustering_net
 
 from typing import Dict, Any, Optional
+from pytorch_lightning.utilities.distributed import rank_zero_only
+rank_zero_print = rank_zero_only(print)
 
 
 class ClusterNetModel(pl.LightningModule):
@@ -97,6 +99,7 @@ class ClusterNetModel(pl.LightningModule):
         return self.cluster_net(x)
 
     def on_train_epoch_start(self):
+        rank_zero_print(f"Epoch {self.current_epoch:3d}")
         # get current training_stage
         self.current_training_stage = (
             "gather_codes" if self.current_epoch == 0
@@ -184,7 +187,7 @@ class ClusterNetModel(pl.LightningModule):
             model_covs=self.covs
             if self.hparams.cluster_loss in ("diag_NIG", "KL_GMM_2") else None,
             pi=self.pi)
-        
+
         self.log(
             "cluster_net_train/train/cluster_loss",
             self.hparams.cluster_loss_weight * cluster_loss,
@@ -338,6 +341,7 @@ class ClusterNetModel(pl.LightningModule):
                     random_state=0,
                     device=self.device,
                 )
+                rank_zero_print(f"Initial pi:{self.pi.tolist()}")
                 if self.hparams.use_labels_for_eval:
                     if (self.train_gt < 0).any():
                         # some samples don't have label, e.g., stl10
@@ -352,7 +356,7 @@ class ClusterNetModel(pl.LightningModule):
                     init_ari = adjusted_rand_score(gt, init_labels)
                     self.log("cluster_net_train/init_nmi", init_nmi)
                     self.log("cluster_net_train/init_ari", init_ari)
-                
+
         else:
             # add avg loss of all losses
             if not self.hparams.ignore_subclusters:
@@ -398,6 +402,8 @@ class ClusterNetModel(pl.LightningModule):
                     self.prior,
                 )
 
+                rank_zero_print(f"pi:{self.pi.tolist()}")
+
             if (self.hparams.start_sub_clustering == self.current_epoch +
                     1) or (self.hparams.ignore_subclusters and
                            (perform_split or perform_merge)):
@@ -432,7 +438,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.prior,
                 )
             if perform_split and not freeze_mus:
-                print("perform splits")
+                rank_zero_print("perform splits")
                 # perform splits
                 self.training_utils.last_performed = "split"
                 split_decisions = split_step(
@@ -444,7 +450,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.split_performed = True
                     self.perform_split_operations(split_decisions)
             if perform_merge and not freeze_mus:
-                print("perform merges")
+                rank_zero_print("perform merges")
                 # make sure no split and merge step occur in the same epoch
                 # perform merges
                 # =1 to be one epoch after a split
@@ -468,10 +474,10 @@ class ClusterNetModel(pl.LightningModule):
             # compute nmi, unique z, etc.
             if self.hparams.log_metrics_at_train and self.hparams.evaluate_every_n_epochs > 0 and self.current_epoch % self.hparams.evaluate_every_n_epochs == 0:
                 self.log_clustering_metrics()
-                
+
         if self.split_performed or self.merge_performed:
             self.update_params_split_merge()
-            print("Current number of clusters: ", self.K)
+            rank_zero_print("Current number of clusters:", self.K)
 
         self.log("K", self.K)
 
@@ -575,7 +581,7 @@ class ClusterNetModel(pl.LightningModule):
                                            self.prior,
                                            use_priors=self.hparams.use_priors)
         # update K
-        print(
+        rank_zero_print(
             f"Splitting clusters {np.arange(self.K)[split_decisions.bool().tolist()]}"
         )
         self.K += len(mus_ind_to_split)
@@ -613,7 +619,7 @@ class ClusterNetModel(pl.LightningModule):
             highest_ll_mus ([type]): a list of the highest log likelihood index for each pair of mus
         """
 
-        print(f"Merging clusters {mus_lists_to_merge}")
+        rank_zero_print(f"Merging clusters {mus_lists_to_merge}")
         mus_lists_to_merge = torch.tensor(mus_lists_to_merge)
         inds_to_mask = torch.zeros(self.K, dtype=bool)
         inds_to_mask[mus_lists_to_merge.flatten()] = 1
@@ -723,48 +729,37 @@ class ClusterNetModel(pl.LightningModule):
         self.pi_sub = self.pi_sub_new
 
     def init_covs_and_pis_given_mus(self):
-        # each point will be hard assigned to its closest cluster and then compute covs and pis.
-        # compute dist mat
-        if self.hparams.use_priors_for_net_params_init:
-            _, cov_prior = self.prior.init_priors(
-                self.mus
-            )  # giving mus and nopt codes because we only need the dim for the covs
-            self.covs = torch.stack([cov_prior for k in range(self.K)])
-            p_counts = torch.ones(self.K) * 10
-            self.pi = p_counts / float(self.K * 10)  # a uniform pi prior
-
-        else:
-            dis_mat = torch.empty((len(self.codes), self.K))
-            for i in range(self.K):
-                dis_mat[:, i] = torch.sqrt(
+        dis_mat = torch.empty((len(self.codes), self.K))
+        for i in range(self.K):
+            dis_mat[:, i] = torch.sqrt(
                     ((self.codes - self.mus[i])**2).sum(axis=1))
-            # get hard assingment
-            hard_assign = torch.argmin(dis_mat, dim=1)
+        # get hard assingment
+        hard_assign = torch.argmin(dis_mat, dim=1)
 
-            # data params
-            vals, counts = torch.unique(hard_assign, return_counts=True)
-            if len(counts) < self.K:
-                new_counts = []
-                for k in range(self.K):
-                    if k in vals:
-                        new_counts.append(counts[vals == k])
-                    else:
-                        new_counts.append(0)
-                counts = torch.tensor(new_counts)
-            pi = counts / float(len(self.codes))
-            data_covs = compute_data_covs_hard_assignment(
+        # data params
+        vals, counts = torch.unique(hard_assign, return_counts=True)
+        if len(counts) < self.K:
+            new_counts = []
+            for k in range(self.K):
+                if k in vals:
+                    new_counts.append(counts[vals == k])
+                else:
+                    new_counts.append(0)
+            counts = torch.tensor(new_counts)
+        pi = counts / float(len(self.codes))
+        data_covs = compute_data_covs_hard_assignment(
                 hard_assign.numpy(), self.codes, self.K, self.mus.cpu(),
                 self.prior)
-            if self.use_priors:
-                covs = []
-                for k in range(self.K):
-                    codes_k = self.codes[hard_assign == k]
-                    cov_k = self.prior.compute_post_cov(
+        if self.use_priors:
+            covs = []
+            for k in range(self.K):
+                codes_k = self.codes[hard_assign == k]
+                cov_k = self.prior.compute_post_cov(
                         counts[k], codes_k.mean(axis=0), data_covs[k])
-                    covs.append(cov_k)
-                covs = torch.stack(covs)
-            self.covs = covs
-            self.pi = pi
+                covs.append(cov_k)
+            covs = torch.stack(covs)
+        self.covs = covs
+        self.pi = pi
 
     def log_logits(self, logits):
         for k in range(self.K):
@@ -816,7 +811,6 @@ class ClusterNetModel(pl.LightningModule):
         plt.close(fig)
 
     def log_clustering_metrics(self, stage="train"):
-        # print("Evaluating...")
         if stage == "train":
             gt = self.train_gt
             resp = self.train_resp
@@ -866,7 +860,7 @@ class ClusterNetModel(pl.LightningModule):
 
         if (self.hparams.log_metrics_at_train and stage == "train") or \
             (not self.hparams.log_metrics_at_train and stage != "train"):
-            print(
+            rank_zero_print(
                 f"NMI : {gt_nmi}, ARI: {ari}, ACC: {acc}, current K: {unique_z}"
             )
 

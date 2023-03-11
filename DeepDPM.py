@@ -22,22 +22,20 @@ from src.utils import check_args, cluster_acc
 from typing import Optional
 import logging
 
-logging.getLogger("lightning").setLevel(logging.ERROR)
+logging.getLogger("lightning").setLevel(logging.INFO)
 
-def get_dataset_directory(dataset_name:str)->str:
-    if dataset_name=='CNG':
-        return "./pretrained_embeddings/umap_embedded_datasets/"
+
+def get_dataset_directory(dataset_name: str) -> str:
+    if dataset_name == 'CNG':
+        return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/cng_features"
     else:
         raise NotImplementedError
+
 
 def parse_minimal_args(parser):
     # Dataset parameters
     parser.add_argument("--dataset", default="custom")
     # Training parameters
-    parser.add_argument("--lr",
-                        type=float,
-                        default=0.002,
-                        help="learning rate (default: 2e-3)")
     parser.add_argument("--batch-size",
                         type=int,
                         default=128,
@@ -76,17 +74,10 @@ def run_on_embeddings_hyperparams(parent_parser):
                         type=int,
                         help="number of initial clusters")
     parser.add_argument(
-        "--clusternet_hidden",
-        type=int,
-        default=50,
-        help=
-        "The dimensions of the hidden dim of the clusternet. Defaults to 50.",
-    )
-    parser.add_argument(
         "--clusternet_hidden_layer_list",
         type=int,
         nargs="+",
-        default=[50],
+        default=[50,50],
         help="The hidden layers in the clusternet. Defaults to [50, 50].",
     )
     parser.add_argument(
@@ -103,17 +94,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--cluster_loss_weight",
         type=float,
         default=1,
-    )
-    parser.add_argument(
-        "--init_cluster_net_weights",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
-        "--when_to_compute_mu",
-        type=str,
-        choices=["once", "every_epoch", "every_5_epochs"],
-        default="every_epoch",
     )
     parser.add_argument(
         "--how_to_compute_mu",
@@ -221,25 +201,11 @@ def run_on_embeddings_hyperparams(parent_parser):
         "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
     )
     parser.add_argument(
-        "--split_every_n_epochs",
-        type=int,
-        default=10,
-        help=
-        "Example: if set to 10, split proposals will be made every 10 epochs",
-    )
-    parser.add_argument(
         "--split_merge_every_n_epochs",
         type=int,
         default=30,
         help=
         "Example: if set to 10, split proposals will be made every 10 epochs",
-    )
-    parser.add_argument(
-        "--merge_every_n_epochs",
-        type=int,
-        default=10,
-        help=
-        "Example: if set to 10, merge proposals will be made every 10 epochs",
     )
     parser.add_argument(
         "--raise_merge_proposals",
@@ -410,7 +376,7 @@ def get_args() -> Namespace:
     parser = run_on_embeddings_hyperparams(parser)
     args = parser.parse_args()
     args.train_cluster_net = args.max_epochs
-    args.dir=get_dataset_directory(args.dataset)
+    args.dir = get_dataset_directory(args.dataset)
     return args
 
 
@@ -425,7 +391,8 @@ def train_cluster_net():
     check_args(args, dataset_obj.data_dim)
 
     logger = TensorBoardLogger(save_dir="tensorboard",
-                               name=args.project + "-" + args.exp_name)
+                               name=args.project,
+                               version=args.exp_name)
 
     seed.seed_everything(args.seed)
 

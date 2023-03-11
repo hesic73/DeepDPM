@@ -18,6 +18,11 @@ from src.clustering_models.clusternet_modules.utils.clustering_utils.clustering_
     init_mus_and_covs_sub, comp_subclusters_params_min_dist)
 
 
+from pytorch_lightning.utilities.distributed import rank_zero_only
+
+rank_zero_print = rank_zero_only(print)
+
+
 def log_Hastings_ratio_split(alpha: float, N_k_1: int, N_k_2: int,
                              log_ll_k_1: float, log_ll_k_2: float,
                              log_ll_k: float) -> float:
@@ -31,7 +36,7 @@ def log_Hastings_ratio_split(alpha: float, N_k_1: int, N_k_2: int,
 
 def log_Hastings_ratio_merge(alpha: float, N_k_1: int, N_k_2: int,
                              log_ll_k_1: float, log_ll_k_2: float,
-                             log_ll_k: float, merge_prob: Optional[float]):
+                             log_ll_k: float)->float:
     # use log for overflows
     if N_k_1 == 0:
         lgamma_1 = 0
@@ -44,13 +49,12 @@ def log_Hastings_ratio_merge(alpha: float, N_k_1: int, N_k_2: int,
     # Hastings ratio in log space
     N_k = N_k_1 + N_k_2
     if N_k > 0:
-        H = ((lgamma(N_k) - (np.log(alpha) + lgamma_1 + lgamma_2)) +
+        log_H = ((lgamma(N_k) - (np.log(alpha) + lgamma_1 + lgamma_2)) +
              (log_ll_k - (log_ll_k_1 + log_ll_k_2)))
     else:
-        H = torch.ones(1)
+        log_H = torch.zeros(1)
 
-    merge_prob = merge_prob or torch.exp(H)
-    return bool(H > 0 or merge_prob > torch.rand(1))
+    return log_H
 
 
 def split_rule(k: int,
@@ -106,10 +110,6 @@ def split_rule(k: int,
                                     log_ll_k_2, log_ll_k)
 
 
-def compute_split_log_marginal_ll():
-    pass
-
-
 def compute_split_log_ll(mu, mus_sub_1, mus_sub_2, cov_const, codes_k,
                          codes_k_1, codes_k_2):
     D = len(mu)
@@ -146,7 +146,7 @@ def split_step(K: int,
     if split_prob is not None:
         split_decisions = torch.full((K, ), split_prob)
         return split_decisions > torch.rand_like(split_decisions)
-    
+
 
 
     split_decisions = torch.empty(K, dtype=torch.float32)
@@ -161,7 +161,7 @@ def split_step(K: int,
                                         alpha,
                                         prior=prior,
                                         ignore_subclusters=ignore_subclusters)
-
+    rank_zero_print(f"split decisions:{split_decisions.tolist()}")
     split_decisions = torch.exp(split_decisions) > torch.rand_like(
         split_decisions)
     return split_decisions
@@ -493,6 +493,8 @@ def merge_step(mus,
                                                     cov_const,
                                                     merge_prob,
                                                     prior=prior)
+
+            merge_decision=[torch.exp(l)>torch.rand(1) for l in merge_decision]
             # merge decision returns a boolean array with the decision on whether to merge each pair
             # so, if we had N chosen mus, merge decision will be of size N/2. If it's true at 0
             # then we will merge the chosen mus at [0, 1]
@@ -528,6 +530,7 @@ def merge_step(mus,
                                                         cov_const,
                                                         merge_prob,
                                                         prior=prior)
+                merge_decision=[torch.exp(l)>torch.rand(1) for l in merge_decision]
                 if merge_decision[0]:
                     # merge is accepted
                     mus_to_consider_to_merge.pop(p_0)
@@ -554,7 +557,9 @@ def merge_step(mus,
                                                         cov_const,
                                                         merge_prob,
                                                         prior=prior)
-
+                merge_decision = [
+                    torch.exp(l) > torch.rand(1) for l in merge_decision
+                ]
     return mus_to_merge, highest_ll_mus
 
 
@@ -614,9 +619,10 @@ def merge_rule(mus,
             log_ll_k = prior.log_marginal_likelihood(codes_k, mus_mean)
             log_ll_k_1 = prior.log_marginal_likelihood(codes_k_1, mus[k_1])
             log_ll_k_2 = prior.log_marginal_likelihood(codes_k_2, mus[k_2])
-
-        decisions.append(
-            log_Hastings_ratio_merge(alpha, N_k_1, N_k_2, log_ll_k_1,
-                                     log_ll_k_2, log_ll_k, merge_prob))
+        prob = merge_prob or log_Hastings_ratio_merge(
+            alpha, N_k_1, N_k_2, log_ll_k_1, log_ll_k_2, log_ll_k)
+        decisions.append(prob)
         highest_ll.append(k_inds[i:i + 2][int(log_ll_k_1 < log_ll_k_2)])
+
+    rank_zero_print(f"merge decisions:{decisions}")
     return decisions, highest_ll

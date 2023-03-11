@@ -145,6 +145,7 @@ def init_mus_and_covs_sub(codes,
         else:
             _, c = torch.unique(labels, return_counts=True)
         counts.append(c)
+        counts = counts[0] # added by hesicheng. I don't know what I'm doing
         mus_sub = cluster_centers
 
         data_covs_sub = compute_data_covs_hard_assignment(

@@ -1,25 +1,32 @@
 #!/bin/bash
 
 PROJECT=DeepDPM_CNG
-EXP_NAME=test1
+EXP_NAME=kmeans_init_sub
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
---dir ./pretrained_embeddings/umap_embedded_datasets/MNIST \
 --seed 12345 \
 --project "$PROJECT" \
 --exp_name "$EXP_NAME" \
 --use_labels_for_eval \
 --save_checkpoints \
 --max_epochs 500 \
---batch-size 128 \
---gpus 0,1,2,3"
+--batch-size 512 \
+--gpus 1,2,3"
 
 
-EXPERIMENT_ARGS=" --init_k 20"
+EXPERIMENT_ARGS=" --init_k 10 \
+--clusternet_hidden_layer_list 128 256 256 128 \
+--start_computing_params 25 \
+--how_to_compute_mu kmeans \
+--start_sub_clustering 45 \
+--start_splitting 55 \
+--start_merging 55 \
+--split_merge_every_n_epochs 30 \
+--how_to_init_mu_sub kmeans"
 
 ARGS=$MINIMAL_ARGS$EXPERIMENT_ARGS
 
 echo $ARGS
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 python DeepDPM.py $ARGS
