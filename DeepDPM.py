@@ -40,6 +40,11 @@ def parse_minimal_args(parser):
                         type=int,
                         default=128,
                         help="input batch size for training")
+    parser.add_argument("--num_workers",
+                        type=int,
+                        default=3,
+                        help="num_workers for Dataloader")
+    
     parser.add_argument(
         "--seed",
         type=int,
@@ -400,7 +405,8 @@ def train_cluster_net():
                             input_dim=dataset_obj.data_dim,
                             init_k=args.init_k)
 
-    trainer = pl.Trainer(logger=logger,
+    trainer = pl.Trainer(accelerator='ddp',
+                         logger=logger,
                          max_epochs=args.max_epochs,
                          gpus=args.gpus,
                          num_sanity_val_steps=0,

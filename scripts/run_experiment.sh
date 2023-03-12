@@ -11,7 +11,7 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --use_labels_for_eval \
 --save_checkpoints \
 --max_epochs 500 \
---batch-size 128 \
+--batch-size 256 \
 --gpus 1,2,3"
 
 

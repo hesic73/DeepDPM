@@ -11,6 +11,7 @@ from torch.utils.data import TensorDataset
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
 
+
 def transform_embeddings(transform_type, data):
     if transform_type == "normalize":
         return torch.Tensor(Normalizer().fit_transform(data))
@@ -20,6 +21,7 @@ def transform_embeddings(transform_type, data):
         return torch.Tensor(StandardScaler().fit_transform(data))
     else:
         raise NotImplementedError()
+
 
 class MyDataset:
     @property
@@ -44,14 +46,18 @@ class MyDataset:
             self.get_train_data(),
             batch_size=self.args.batch_size,
             shuffle=True,
-            num_workers=6,
+            num_workers=self.args.num_workers,
         )
         return train_loader
 
     def get_test_loader(self):
         test_data = self.get_test_data()
-        if len(test_data) > 0:     
-            return torch.utils.data.DataLoader(test_data, batch_size=self.args.batch_size, shuffle=False, num_workers=6)
+        if len(test_data) > 0:
+            return torch.utils.data.DataLoader(
+                test_data,
+                batch_size=self.args.batch_size,
+                shuffle=False,
+                num_workers=self.args.num_workers)
         else:
             return None
 
@@ -62,14 +68,22 @@ class MyDataset:
 class MNIST(MyDataset):
     def __init__(self, args):
         super().__init__(args)
-        self.transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+        self.transformer = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307, ), (0.3081, ))
+        ])
         self._data_dim = 28 * 28
 
     def get_train_data(self):
-        return datasets.MNIST(self.data_dir, train=True, download=True, transform=self.transformer)
+        return datasets.MNIST(self.data_dir,
+                              train=True,
+                              download=True,
+                              transform=self.transformer)
 
     def get_test_data(self):
-        return datasets.MNIST(self.data_dir, train=False, transform=self.transformer)
+        return datasets.MNIST(self.data_dir,
+                              train=False,
+                              transform=self.transformer)
 
 
 class STL10(MyDataset):
@@ -83,10 +97,15 @@ class STL10(MyDataset):
         self.split = split
 
     def get_train_data(self):
-        return datasets.STL10(self.data_dir, split=self.split, download=True, transform=self.transformer)
+        return datasets.STL10(self.data_dir,
+                              split=self.split,
+                              download=True,
+                              transform=self.transformer)
 
     def get_test_data(self):
-        return datasets.STL10(self.data_dir, split="test", transform=self.transformer)
+        return datasets.STL10(self.data_dir,
+                              split="test",
+                              transform=self.transformer)
 
 
 class USPS(MyDataset):
@@ -121,7 +140,8 @@ class USPS(MyDataset):
         labels = data[:, 0]
 
         if self.args.transform_input_data:
-            data = transform_embeddings(self.args.transform_input_data, imgs.numpy())
+            data = transform_embeddings(self.args.transform_input_data,
+                                        imgs.numpy())
         train_set = TensorDataset(imgs, labels)
         del data, imgs, labels
         return train_set
@@ -135,7 +155,8 @@ class USPS(MyDataset):
         imgs = data[:, 1:]
         labels = data[:, 0]
         if self.args.transform_input_data:
-            data = transform_embeddings(self.args.transform_input_data, imgs.numpy())
+            data = transform_embeddings(self.args.transform_input_data,
+                                        imgs.numpy())
         test_set = TensorDataset(imgs, labels)
         del data, imgs, labels
         return test_set
@@ -163,22 +184,26 @@ class REUTERS(MyDataset):
         self.filename = name
 
     def get_train_data(self):
-        if not os.path.exists(os.path.join(self.data_dir, f"{self.filename}.npy")):
+        if not os.path.exists(
+                os.path.join(self.data_dir, f"{self.filename}.npy")):
             print("making reuters idf features")
             self.make_reuters_data(self.data_dir, self.how_many)
             print((f"{self.filename} saved to " + self.data_dir))
 
         # data = np.load(os.path.join(data_dir, f"{self.filename}.npy"), allow_pickle=True).item()
         import pickle
-        infile = open(os.path.join(self.data_dir, f"{self.filename}.npy"), 'rb')
+        infile = open(os.path.join(self.data_dir, f"{self.filename}.npy"),
+                      'rb')
         data = pickle.load(infile)
         infile.close()
         # has been shuffled
         x = data["data"]
         y = data["label"]
         x = x.reshape((x.shape[0], -1))
-        y = y.reshape((y.size,))
-        train_set = TensorDataset(torch.from_numpy(x).float(), torch.from_numpy(y).float())
+        y = y.reshape((y.size, ))
+        train_set = TensorDataset(
+            torch.from_numpy(x).float(),
+            torch.from_numpy(y).float())
         del x, y
         return train_set
 
@@ -188,13 +213,16 @@ class REUTERS(MyDataset):
         else:
             # randomly sample
             data_dir = os.path.join(self.args.dir, "REUTERS")
-            data = np.load(os.path.join(data_dir, f"{self.filename}.npy"), allow_pickle=True)
+            data = np.load(os.path.join(data_dir, f"{self.filename}.npy"),
+                           allow_pickle=True)
             # has been shuffled
             x = data["data"]
             y = data["label"]
             x = x.reshape((x.shape[0], -1))
-            y = y.reshape((y.size,))
-            test_set = TensorDataset(torch.from_numpy(x)[:8000].float(), torch.from_numpy(y)[:8000].float())
+            y = y.reshape((y.size, ))
+            test_set = TensorDataset(
+                torch.from_numpy(x)[:8000].float(),
+                torch.from_numpy(y)[:8000].float())
             del x, y
             return test_set
 
@@ -217,11 +245,11 @@ class REUTERS(MyDataset):
                 if len(did_to_cat[did]) > 1:
                     del did_to_cat[did]
 
-        dat_list = ["lyrl2004_tokens_test_pt0.dat",
-                    "lyrl2004_tokens_test_pt1.dat",
-                    "lyrl2004_tokens_test_pt2.dat",
-                    "lyrl2004_tokens_test_pt3.dat",
-                    "lyrl2004_tokens_train.dat"]
+        dat_list = [
+            "lyrl2004_tokens_test_pt0.dat", "lyrl2004_tokens_test_pt1.dat",
+            "lyrl2004_tokens_test_pt2.dat", "lyrl2004_tokens_test_pt3.dat",
+            "lyrl2004_tokens_train.dat"
+        ]
         data = []
         target = []
         cat_to_cid = {"CCAT": 0, "GCAT": 1, "MCAT": 2, "ECAT": 3}
@@ -247,7 +275,8 @@ class REUTERS(MyDataset):
         print((len(data), "and", len(did_to_cat)))
         assert len(data) == len(did_to_cat)
 
-        x = CountVectorizer(dtype=np.float64, max_features=2000).fit_transform(data)
+        x = CountVectorizer(dtype=np.float64,
+                            max_features=2000).fit_transform(data)
         y = np.asarray(target)
 
         from sklearn.feature_extraction.text import TfidfTransformer
@@ -293,35 +322,36 @@ class GMM_dataset(MyDataset):
             self.labels = labels
         else:
             self.mus = [
-                    torch.tensor([-5., -5.]),
-                    torch.tensor([-5., -3.]),
-                    torch.tensor([-5., 0.]),
-                    torch.tensor([-5., 3.]),
-                    torch.tensor([-5., 5.]),
-
-                    torch.tensor([0., -5.]),
-                    torch.tensor([0., -3.]),
-                    torch.tensor([0., 0.]),
-                    torch.tensor([0., 3.]),
-                    torch.tensor([0., 5.]),
-
-                    torch.tensor([5., -5.]),
-                    torch.tensor([5., -3.]),
-                    torch.tensor([5., 0.]),
-                    torch.tensor([5., 3.]),
-                    torch.tensor([5., 5.]),
-                ]
+                torch.tensor([-5., -5.]),
+                torch.tensor([-5., -3.]),
+                torch.tensor([-5., 0.]),
+                torch.tensor([-5., 3.]),
+                torch.tensor([-5., 5.]),
+                torch.tensor([0., -5.]),
+                torch.tensor([0., -3.]),
+                torch.tensor([0., 0.]),
+                torch.tensor([0., 3.]),
+                torch.tensor([0., 5.]),
+                torch.tensor([5., -5.]),
+                torch.tensor([5., -3.]),
+                torch.tensor([5., 0.]),
+                torch.tensor([5., 3.]),
+                torch.tensor([5., 5.]),
+            ]
 
             # covs = [(torch.rand(2, 2) - 0.5) for _ in range(self.k)]
-            covs = [torch.eye(2)*0.5 + (torch.rand(2, 2)*0.5 - 0.3) for _ in range(self.k)]
+            covs = [
+                torch.eye(2) * 0.5 + (torch.rand(2, 2) * 0.5 - 0.3)
+                for _ in range(self.k)
+            ]
             self.covs = [covs[k] @ covs[k].T for k in range(self.k)]
             self.weights = torch.div(torch.ones((self.k)), self.k)
             self.GMMs = [
-                    torch.distributions.multivariate_normal.MultivariateNormal(loc=self.mus[i], covariance_matrix=self.covs[i])
+                torch.distributions.multivariate_normal.MultivariateNormal(
+                    loc=self.mus[i], covariance_matrix=self.covs[i])
                 for i in range(self.k)
             ]
             self.samples, self.labels = self._sample(10000)
-
 
     def _sample(self, n_samples):
         """Sample n_samples from the GMM
@@ -329,12 +359,15 @@ class GMM_dataset(MyDataset):
         Args:
             n_samples ([int]): Number of samples.
         """
-        components = np.random.choice(self.k, n_samples, p=self.weights.numpy())
+        components = np.random.choice(self.k,
+                                      n_samples,
+                                      p=self.weights.numpy())
         samples = [self.GMMs[comp].rsample() for comp in components]
 
-        tensor_samples = torch.cat(
-            samples, out=torch.Tensor(n_samples, self.data_dim)
-        ).reshape(n_samples, -1)
+        tensor_samples = torch.cat(samples,
+                                   out=torch.Tensor(n_samples,
+                                                    self.data_dim)).reshape(
+                                                        n_samples, -1)
         return tensor_samples, torch.tensor(components)
 
     def get_train_data(self):
@@ -350,22 +383,26 @@ class TensorDatasetWrapper(TensorDataset):
         self.data = data
         self.targets = labels
 
+
 class CustomDataset(MyDataset):
     def __init__(self, args):
         super().__init__(args)
         self.transformer = transforms.Compose([transforms.ToTensor()])
         self._data_dim = 0
-    
+
     def get_train_data(self):
-        train_codes = torch.Tensor(torch.load(os.path.join(self.data_dir, "train_data.pt")))
+        train_codes = torch.Tensor(
+            torch.load(os.path.join(self.data_dir, "train_data.pt")))
         if self.args.transform_input_data:
-            train_codes = transform_embeddings(self.args.transform_input_data, train_codes)
+            train_codes = transform_embeddings(self.args.transform_input_data,
+                                               train_codes)
         if self.args.use_labels_for_eval:
-            train_labels = torch.load(os.path.join(self.data_dir, "train_labels.pt"))
+            train_labels = torch.load(
+                os.path.join(self.data_dir, "train_labels.pt"))
         else:
             train_labels = torch.zeros((train_codes.size()[0]))
         self._data_dim = train_codes.size()[1]
-        
+
         train_set = TensorDatasetWrapper(train_codes, train_labels)
         del train_codes
         del train_labels
@@ -373,17 +410,20 @@ class CustomDataset(MyDataset):
 
     def get_test_data(self):
         try:
-            test_codes = torch.load(os.path.join(self.data_dir, "test_data.pt"))
+            test_codes = torch.load(os.path.join(self.data_dir,
+                                                 "test_data.pt"))
             if self.args.use_labels_for_eval:
-                test_labels = torch.load(os.path.join(self.data_dir, "test_labels.pt"))
+                test_labels = torch.load(
+                    os.path.join(self.data_dir, "test_labels.pt"))
             else:
                 test_labels = torch.zeros((test_codes.size()[0]))
         except FileNotFoundError:
             print("Test data not found! running only with train data")
             return TensorDatasetWrapper(torch.empty(0), torch.empty(0))
-        
+
         if self.args.transform_input_data:
-            test_codes = transform_embeddings(self.args.transform_input_data, test_codes)
+            test_codes = transform_embeddings(self.args.transform_input_data,
+                                              test_codes)
         test_set = TensorDatasetWrapper(test_codes, test_labels)
         del test_codes
         del test_labels

@@ -245,13 +245,9 @@ class Subclustering_net(nn.Module):
             gradient_mask_fc2[2 * k:2 * (k + 1), self.hidden_dim *
                               k:self.hidden_dim * (k + 1)] = 1
 
-        self.class_fc1.to(self.device)
-        self.class_fc2.to(self.device)
-        gradient_mask_fc2 = gradient_mask_fc2.to(self.device)
-
         self.class_fc2.weight.data *= gradient_mask_fc2
         self.class_fc2.weight.register_hook(
-            lambda grad: grad.mul_(gradient_mask_fc2))
+            lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
         # weights are zero and their grad will always be 0 so won't change
 
     def forward(self, X: torch.Tensor):
@@ -377,7 +373,7 @@ class Subclustering_net(nn.Module):
 
             # Adjust weights
             fc1_weights_not_merged = class_fc1.weight.data[
-                torch.logical_not(torch.tensor(merge_decisions)
+                torch.logical_not(merge_decisions.clone().detach()
                                   ).repeat_interleave(self.hidden_dim), :]
             fc1_new_weights = []
             fc1_new_bias = []
