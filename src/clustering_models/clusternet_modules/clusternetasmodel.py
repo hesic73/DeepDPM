@@ -568,7 +568,7 @@ class ClusterNetModel(pl.LightningModule):
         clus_opt.param_groups[1]["params"] = list(
             self.cluster_net.class_fc2.parameters())
         self.cluster_net.class_fc2.to(self._device)
-        mus_ind_to_split = torch.nonzero(torch.tensor(split_decisions),
+        mus_ind_to_split = torch.nonzero(split_decisions.clone().detach(),
                                          as_tuple=False)
         (
             self.mus_new,

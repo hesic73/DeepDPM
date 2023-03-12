@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT=DeepDPM_CNG
-EXP_NAME=init_k_2
+EXP_NAME=init_k_15
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
@@ -15,7 +15,7 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --gpus 1,2,3"
 
 
-EXPERIMENT_ARGS=" --init_k 2 \
+EXPERIMENT_ARGS=" --init_k 15 \
 --clusternet_hidden_layer_list 128 256 512 512 256 128 \
 --start_computing_params 25 \
 --how_to_compute_mu kmeans \
@@ -28,5 +28,5 @@ EXPERIMENT_ARGS=" --init_k 2 \
 ARGS=$MINIMAL_ARGS$EXPERIMENT_ARGS
 
 echo $ARGS
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 python DeepDPM.py $ARGS

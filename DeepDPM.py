@@ -4,6 +4,7 @@
 # Copyright (c) 2022 Meitar Ronen
 #
 
+import wandb
 import argparse
 from argparse import ArgumentParser, Namespace
 import os
@@ -44,7 +45,7 @@ def parse_minimal_args(parser):
                         type=int,
                         default=3,
                         help="num_workers for Dataloader")
-    
+
     parser.add_argument(
         "--seed",
         type=int,
@@ -82,7 +83,7 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--clusternet_hidden_layer_list",
         type=int,
         nargs="+",
-        default=[50,50],
+        default=[50, 50],
         help="The hidden layers in the clusternet. Defaults to [50, 50].",
     )
     parser.add_argument(
@@ -386,6 +387,7 @@ def get_args() -> Namespace:
 
 
 def train_cluster_net():
+
     args = get_args()
 
     dataset_obj = GMM_dataset(
@@ -394,10 +396,12 @@ def train_cluster_net():
     train_loader, val_loader = dataset_obj.get_loaders()
 
     check_args(args, dataset_obj.data_dim)
-
-    logger = TensorBoardLogger(save_dir="tensorboard",
-                               name=args.project,
-                               version=args.exp_name)
+    wandb.init(project=args.project,
+               name=args.exp_name,
+               sync_tensorboard=True,
+               mode='offline',
+               config=args)
+    logger = TensorBoardLogger(save_dir="tensorboard", name=args.project)
 
     seed.seed_everything(args.seed)
 
