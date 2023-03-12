@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT=DeepDPM_CNG
-EXP_NAME=baseline
+EXP_NAME=init_k_2
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
@@ -11,11 +11,11 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --use_labels_for_eval \
 --save_checkpoints \
 --max_epochs 500 \
---batch-size 256 \
+--batch-size 128 \
 --gpus 1,2,3"
 
 
-EXPERIMENT_ARGS=" --init_k 10 \
+EXPERIMENT_ARGS=" --init_k 2 \
 --clusternet_hidden_layer_list 128 256 512 512 256 128 \
 --start_computing_params 25 \
 --how_to_compute_mu kmeans \
@@ -23,7 +23,7 @@ EXPERIMENT_ARGS=" --init_k 10 \
 --start_splitting 55 \
 --start_merging 55 \
 --split_merge_every_n_epochs 30 \
---prior_sigma_scale .004"
+--prior_sigma_scale .005"
 
 ARGS=$MINIMAL_ARGS$EXPERIMENT_ARGS
 

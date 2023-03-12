@@ -146,7 +146,7 @@ def init_mus_and_covs_sub(codes,
         else:
             _, c = torch.unique(labels, return_counts=True)
         counts.append(c)
-        counts = counts[0] # added by hesicheng. I don't know what I'm doing
+        counts = counts[0]  # added by hesicheng. I don't know what I'm doing
         mus_sub = cluster_centers
 
         data_covs_sub = compute_data_covs_hard_assignment(
@@ -276,7 +276,7 @@ def compute_mus_soft_assignment(codes, logits, K, constant=True):
     return mus
 
 
-def compute_pi_k(logits:Tensor, prior=None)->Tensor:
+def compute_pi_k(logits: Tensor, prior=None) -> Tensor:
     """compute pi_k
 
     Args:
@@ -334,10 +334,13 @@ def compute_mus(codes,
                 random_state=0,
                 device="cpu"):
     if how_to_compute_mu == "kmeans":
-        labels, cluster_centers = GPU_KMeans(X=codes.detach(),
-                                             num_clusters=K,
-                                             device=torch.device('cuda:0'),
-                                             tqdm_flag=False)
+        if K == 1:
+            cluster_centers = torch.mean(codes.detach(), dim=0).unsqueeze(0)
+        else:
+            _, cluster_centers = GPU_KMeans(X=codes.detach(),
+                                            num_clusters=K,
+                                            device=torch.device('cuda:0'),
+                                            tqdm_flag=False)
         mus = cluster_centers
     elif how_to_compute_mu == "soft_assign":
         mus = compute_mus_soft_assignment(codes, logits, K)
@@ -376,8 +379,8 @@ def compute_mus_covs_pis_subclusters(codes,
                                      mus_sub,
                                      K,
                                      n_sub,
-                                     hard_assignment:bool=True,
-                                     use_priors:bool=True,
+                                     hard_assignment: bool = True,
+                                     use_priors: bool = True,
                                      prior=None):
     pi_sub = compute_pi_k(logits_sub, prior=prior if use_priors else None)
     if hard_assignment:

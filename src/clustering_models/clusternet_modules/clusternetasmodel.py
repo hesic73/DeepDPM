@@ -943,7 +943,7 @@ class ClusterNetModel(pl.LightningModule):
     def on_save_checkpoint(self, checkpoint) -> None:
 
         attributes = [
-            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
+            "train_gt", "train_resp", "train_resp_sub", "mus","mus_sub", "covs", "pi",
             "freeze_mus_after_init_until", "plot_utils", "prior"
         ]
 
@@ -956,8 +956,8 @@ class ClusterNetModel(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         # print("{}".format(checkpoint["state_dict"].keys()))
         attributes = [
-            "train_gt", "train_resp", "train_resp_sub", "mus", "covs", "pi",
-            "freeze_mus_after_init_until", "plot_utils", "prior"
+            "train_gt", "train_resp", "train_resp_sub", "mus", "mus_sub",
+            "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior"
         ]
 
         maybe_mismateched_parameters = [

@@ -494,7 +494,9 @@ def merge_step(mus,
                                                     merge_prob,
                                                     prior=prior)
 
-            merge_decision=[torch.exp(l)>torch.rand(1) for l in merge_decision]
+            merge_decision = [
+                torch.exp(l.float()) > torch.rand(1) for l in merge_decision
+            ]
             # merge decision returns a boolean array with the decision on whether to merge each pair
             # so, if we had N chosen mus, merge decision will be of size N/2. If it's true at 0
             # then we will merge the chosen mus at [0, 1]
@@ -530,7 +532,10 @@ def merge_step(mus,
                                                         cov_const,
                                                         merge_prob,
                                                         prior=prior)
-                merge_decision=[torch.exp(l)>torch.rand(1) for l in merge_decision]
+                merge_decision = [
+                    torch.exp(l.float()) > torch.rand(1)
+                    for l in merge_decision
+                ]
                 if merge_decision[0]:
                     # merge is accepted
                     mus_to_consider_to_merge.pop(p_0)
