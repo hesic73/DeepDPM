@@ -33,7 +33,7 @@ class MLP_Classifier(nn.Module):
 
         self.hidden_layers = nn.Sequential(*hidden_modules)
         self.class_fc2 = nn.Linear(self.hidden_dims[-1], self.k)
-        print(self.hidden_layers)
+        # print(self.hidden_layers)
 
         self.softmax_norm = hparams.softmax_norm
 

@@ -133,6 +133,7 @@ dmypy.json
 # custom
 
 saved_models
+results
 
 tensorboard
 wandb
