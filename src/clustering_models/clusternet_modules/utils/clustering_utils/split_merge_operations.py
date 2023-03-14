@@ -66,8 +66,7 @@ def split_rule(k: int,
                mus_sub,
                cov_const,
                alpha,
-               prior=None,
-               ignore_subclusters=False):
+               prior=None):
     # look at the points assigned to k
     codes_ind = logits.argmax(-1) == k
     codes_k = codes[codes_ind]
@@ -76,19 +75,11 @@ def split_rule(k: int,
         # empty cluster
         return -1e8
 
-    if ignore_subclusters:
-        # comp assignments by min dist
-        sub_assignments = comp_subclusters_params_min_dist(
-            codes_k=codes_k,
-            mu_sub_1=mus_sub[2 * k],
-            mu_sub_2=mus_sub[2 * k + 1])
-        codes_k_1 = codes_k[sub_assignments == 0]
-        codes_k_2 = codes_k[sub_assignments == 1]
-    else:
-        # subclusters hard assignment
-        sub_assignment = logits_sub[codes_ind, :].argmax(-1)
-        codes_k_1 = codes_k[sub_assignment == 2 * k]
-        codes_k_2 = codes_k[sub_assignment == 2 * k + 1]
+    
+    # subclusters hard assignment
+    sub_assignment = logits_sub[codes_ind, :].argmax(-1)
+    codes_k_1 = codes_k[sub_assignment == 2 * k]
+    codes_k_2 = codes_k[sub_assignment == 2 * k + 1]
 
     if len(codes_k_1) <= 5 or len(codes_k_2) <= 5:
         # small subclusters
@@ -141,8 +132,7 @@ def split_step(K: int,
                cov_const,
                alpha,
                split_prob: Optional[float],
-               prior=None,
-               ignore_subclusters: bool = False):
+               prior=None):
 
     if split_prob is not None:
         split_decisions = torch.full((K, ), split_prob)
@@ -158,8 +148,7 @@ def split_step(K: int,
                                         mus_sub,
                                         cov_const,
                                         alpha,
-                                        prior=prior,
-                                        ignore_subclusters=ignore_subclusters)
+                                        prior=prior)
     rank_zero_print(f"split decisions:{split_decisions.tolist()}")
     split_decisions = torch.exp(split_decisions) > torch.rand_like(
         split_decisions)

@@ -317,11 +317,6 @@ def run_on_embeddings_hyperparams(parent_parser):
     )
 
     parser.add_argument(
-        "--ignore_subclusters",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--log_metrics_at_train",
         type=bool,
         default=True,
