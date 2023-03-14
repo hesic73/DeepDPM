@@ -7,8 +7,6 @@
 
 SCAN 分类, MoCo
 
-no_split_and_merge init_k=5 
-
 看分类结果
 
 从20->几个重新extract features
@@ -16,5 +14,7 @@ no_split_and_merge init_k=5
 
 深究贝叶斯
 
-
+## 第四周进展
+- 3/13 找到原repository的一个bug，修复后微调超参使得低init_k也能split，高init_k也不至于分太多类
+- 3/14 跑SCAN
 

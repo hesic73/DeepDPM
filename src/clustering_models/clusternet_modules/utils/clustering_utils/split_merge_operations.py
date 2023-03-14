@@ -17,7 +17,6 @@ from src.clustering_models.clusternet_modules.utils.clustering_utils.clustering_
     _create_subclusters, compute_data_covs_soft_assignment,
     init_mus_and_covs_sub, comp_subclusters_params_min_dist)
 
-
 from pytorch_lightning.utilities.distributed import rank_zero_only
 
 rank_zero_print = rank_zero_only(print)
@@ -30,13 +29,15 @@ def log_Hastings_ratio_split(alpha: float, N_k_1: int, N_k_2: int,
     # each subcluster is not empty
     log_H = (np.log(alpha) + lgamma(N_k_1) + log_ll_k_1 + lgamma(N_k_2) +
              log_ll_k_2) - (lgamma(N_k) + log_ll_k)
-
+    rank_zero_print(
+        f"log_H={log_H},N_k_1={N_k_1},N_k_2={N_k_2},log_ll_k_1={log_ll_k_1},log_ll_k_2={log_ll_k_2},log_ll_k={log_ll_k}"
+    )
     return log_H
 
 
 def log_Hastings_ratio_merge(alpha: float, N_k_1: int, N_k_2: int,
                              log_ll_k_1: float, log_ll_k_2: float,
-                             log_ll_k: float)->float:
+                             log_ll_k: float) -> float:
     # use log for overflows
     if N_k_1 == 0:
         lgamma_1 = 0
@@ -50,7 +51,7 @@ def log_Hastings_ratio_merge(alpha: float, N_k_1: int, N_k_2: int,
     N_k = N_k_1 + N_k_2
     if N_k > 0:
         log_H = ((lgamma(N_k) - (np.log(alpha) + lgamma_1 + lgamma_2)) +
-             (log_ll_k - (log_ll_k_1 + log_ll_k_2)))
+                 (log_ll_k - (log_ll_k_1 + log_ll_k_2)))
     else:
         log_H = torch.zeros(1)
 
@@ -146,8 +147,6 @@ def split_step(K: int,
     if split_prob is not None:
         split_decisions = torch.full((K, ), split_prob)
         return split_decisions > torch.rand_like(split_decisions)
-
-
 
     split_decisions = torch.empty(K, dtype=torch.float32)
     for k in range(K):
@@ -449,6 +448,7 @@ def update_models_parameters_merge(
         prior,
         use_priors=use_priors)
     return mus_new, covs_new, pi_new, mus_sub_new, covs_sub_new, pi_sub_new
+
 
 # extern
 def merge_step(mus,

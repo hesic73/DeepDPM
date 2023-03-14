@@ -31,6 +31,7 @@ from src.clustering_models.clusternet_modules.models.Classifiers import MLP_Clas
 
 from typing import Dict, Any, Optional
 from pytorch_lightning.utilities.distributed import rank_zero_only
+
 rank_zero_print = rank_zero_only(print)
 
 
@@ -70,7 +71,8 @@ class ClusterNetModel(pl.LightningModule):
 
         if not self.hparams.ignore_subclusters:
             # initialize subclustering net
-            self.subclustering_net = Subclustering_net(hparams, codes_dim=self.codes_dim, k=self.K)
+            self.subclustering_net = Subclustering_net(
+                hparams, codes_dim=self.codes_dim, k=self.K)
         else:
             self.subclustering_net = None
         self.last_key = self.K - 1  # variable to help with indexing the dict
@@ -113,7 +115,7 @@ class ClusterNetModel(pl.LightningModule):
         self.initialize_net_params(stage="val")
         return super().on_validation_epoch_start()
 
-    def initialize_net_params(self, stage:str):
+    def initialize_net_params(self, stage: str):
         self.codes = []
         if stage == "train":
             if self.current_epoch > 0:
@@ -507,7 +509,7 @@ class ClusterNetModel(pl.LightningModule):
             if not isinstance(self.logger, DummyLogger):
                 self.plot_histograms(train=False, for_thesis=True)
 
-    def subcluster(self, codes:Tensor, logits:Tensor):
+    def subcluster(self, codes: Tensor, logits: Tensor):
         """subcluster
 
         Args:
@@ -520,7 +522,7 @@ class ClusterNetModel(pl.LightningModule):
         """
         # cluster codes into subclusters
         sub_clus_resp = self.subclustering_net(codes)  # unnormalized (n,2k)
-        z = logits.argmax(-1) #(n)
+        z = logits.argmax(-1)  #(n)
 
         # zero out irrelevant subclusters
         mask = torch.zeros_like(sub_clus_resp)
@@ -746,7 +748,7 @@ class ClusterNetModel(pl.LightningModule):
         dis_mat = torch.empty((len(self.codes), self.K))
         for i in range(self.K):
             dis_mat[:, i] = torch.sqrt(
-                    ((self.codes - self.mus[i])**2).sum(axis=1))
+                ((self.codes - self.mus[i])**2).sum(axis=1))
         # get hard assingment
         hard_assign = torch.argmin(dis_mat, dim=1)
 
@@ -761,15 +763,17 @@ class ClusterNetModel(pl.LightningModule):
                     new_counts.append(0)
             counts = torch.tensor(new_counts)
         pi = counts / float(len(self.codes))
-        data_covs = compute_data_covs_hard_assignment(
-                hard_assign.numpy(), self.codes, self.K, self.mus.cpu(),
-                self.prior)
+        data_covs = compute_data_covs_hard_assignment(hard_assign.numpy(),
+                                                      self.codes, self.K,
+                                                      self.mus.cpu(),
+                                                      self.prior)
         if self.use_priors:
             covs = []
             for k in range(self.K):
                 codes_k = self.codes[hard_assign == k]
-                cov_k = self.prior.compute_post_cov(
-                        counts[k], codes_k.mean(axis=0), data_covs[k])
+                cov_k = self.prior.compute_post_cov(counts[k],
+                                                    codes_k.mean(axis=0),
+                                                    data_covs[k])
                 covs.append(cov_k)
             covs = torch.stack(covs)
         self.covs = covs
@@ -943,8 +947,9 @@ class ClusterNetModel(pl.LightningModule):
     def on_save_checkpoint(self, checkpoint) -> None:
 
         attributes = [
-            "train_gt", "train_resp", "train_resp_sub", "mus","mus_sub", "covs", "pi",
-            "freeze_mus_after_init_until", "plot_utils", "prior"
+            "train_gt", "train_resp", "train_resp_sub", "mus", "mus_sub",
+            "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior",
+            "pi_sub"
         ]
 
         for attr in attributes:
@@ -957,7 +962,8 @@ class ClusterNetModel(pl.LightningModule):
         # print("{}".format(checkpoint["state_dict"].keys()))
         attributes = [
             "train_gt", "train_resp", "train_resp_sub", "mus", "mus_sub",
-            "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior"
+            "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior",
+            "pi_sub"
         ]
 
         maybe_mismateched_parameters = [

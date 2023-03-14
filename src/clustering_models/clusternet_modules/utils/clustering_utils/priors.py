@@ -158,12 +158,13 @@ class NIW_prior:
         kappa_star, nu_star, mu_0_star, psi_star = self.compute_params_post(
             codes_k, mu_k)
         (N_k, D) = codes_k.shape
-        return (-(N_k * D / 2.0) * np.log(np.pi) +
-                mvlgamma(torch.tensor(nu_star / 2.0), D) -
-                mvlgamma(torch.tensor(self.niw_nu) / 2.0, D) +
-                (self.niw_nu / 2.0) * torch.logdet(self.niw_psi) -
-                (nu_star / 2.0) * torch.logdet(psi_star) + (D / 2.0) *
-                (np.log(self.niw_kappa) - np.log(kappa_star)))
+        return (
+            -(N_k * D / 2.0) * np.log(np.pi) +
+            mvlgamma(torch.tensor(nu_star / 2.0), D) -
+            mvlgamma(torch.tensor(self.niw_nu) / 2.0, D) +
+            (self.niw_nu / 2.0) * torch.logdet(self.niw_nu * self.niw_psi) -
+            (nu_star / 2.0) * torch.logdet(nu_star * psi_star) + (D / 2.0) *
+            (np.log(self.niw_kappa) - np.log(kappa_star)))
 
 
 class NIG_prior:
