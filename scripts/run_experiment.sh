@@ -1,7 +1,7 @@
 #!/bin/bash
 
-PROJECT=DeepDPM_CNG
-EXP_NAME=init_k_10_another
+PROJECT=DeepDPM_CNG_test
+EXP_NAME=init_k_2
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
@@ -15,8 +15,8 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --gpus 0"
 
 
-EXPERIMENT_ARGS=" --init_k 10 \
---clusternet_hidden_layer_list 128 256 512 512 256 128 \
+EXPERIMENT_ARGS=" --init_k 2 \
+--clusternet_hidden_layer_list 50 50 \
 --start_computing_params 25 \
 --how_to_compute_mu kmeans \
 --start_sub_clustering 45 \
@@ -24,7 +24,7 @@ EXPERIMENT_ARGS=" --init_k 10 \
 --start_merging 55 \
 --split_merge_every_n_epochs 30 \
 --prior_sigma_scale .005 \
---NIW_prior_nu 400"
+--NIW_prior_nu 300"
 
 ARGS=$MINIMAL_ARGS$EXPERIMENT_ARGS
 

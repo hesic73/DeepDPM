@@ -9,20 +9,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 
+
 class MLP_Classifier(nn.Module):
     def __init__(
         self,
         hparams,
-        codes_dim:int=320,
-        k:Optional[int]=None,
+        codes_dim: int = 320,
+        k: Optional[int] = None,
     ):
         super(MLP_Classifier, self).__init__()
 
-        self.k:int = hparams.init_k if k is None else k
+        self.k: int = hparams.init_k if k is None else k
 
-        self.codes_dim:int = codes_dim
-        self.hidden_dims:int = hparams.clusternet_hidden_layer_list
-        self.last_dim:int = self.hidden_dims[-1]
+        self.codes_dim: int = codes_dim
+        self.hidden_dims: int = hparams.clusternet_hidden_layer_list
+        self.last_dim: int = self.hidden_dims[-1]
         self.class_fc1 = nn.Linear(self.codes_dim, self.hidden_dims[0])
         hidden_modules = []
         for i in range(len(self.hidden_dims) - 1):
@@ -363,7 +364,7 @@ class Subclustering_net(nn.Module):
         class_fc2 = self.class_fc2
         mus_ind_not_merged = torch.nonzero(torch.logical_not(
             merge_decisions.clone().detach()),
-                                           as_tuple=False)
+            as_tuple=False)
         self.K -= len(highest_ll)
 
         with torch.no_grad():
@@ -411,7 +412,8 @@ class Subclustering_net(nn.Module):
             for i, k in enumerate(mus_ind_not_merged):
                 # i is the new index of the cluster and k is the old one
                 self.class_fc2.weight.data[2 * i: 2*(i + 1), self.hidden_dim * i: self.hidden_dim * (i+1)] =\
-                    class_fc2.weight.data[2 * k: 2*(k + 1), self.hidden_dim * k: self.hidden_dim * (k+1)]
+                    class_fc2.weight.data[2 * k: 2 *
+                                          (k + 1), self.hidden_dim * k: self.hidden_dim * (k+1)]
                 gradient_mask_fc2[self.hidden_dim * i:self.hidden_dim *
                                   (i + 1), 2 * i:2 * (i + 1)] = 1
             for j, (merge_pair,

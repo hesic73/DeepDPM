@@ -7,6 +7,7 @@
 import torch
 from torch import mvlgamma
 from torch import lgamma
+from torch import Tensor
 import numpy as np
 
 
@@ -14,6 +15,7 @@ class Priors:
     '''
     A prior that will hold the priors for all the parameters.
     '''
+
     def __init__(self,
                  hparams,
                  K,
@@ -95,17 +97,62 @@ class Dirichlet_prior:
         return self.K * self.counts
 
 
+@torch.jit.script
+def NIW_log_marginal_likelihood(D: int, N_k: int, nu: float, nu_star: float, psi: Tensor, psi_star: Tensor, kappa: float, kappa_star: float) -> Tensor:
+    return (
+        -(N_k * D / 2.0) * torch.log(torch.tensor(np.pi)) +
+        mvlgamma(torch.tensor(nu_star / 2.0), D) -
+        mvlgamma(torch.tensor(nu / 2.0), D) +
+        (nu / 2.0) * torch.logdet(psi) -
+        (nu_star / 2.0) * torch.logdet(psi_star) + (D / 2.0) *
+        torch.log(torch.tensor(kappa/kappa_star)) +
+        (D / 2.0) * (nu * torch.log(torch.tensor(nu)) -
+                     nu_star * torch.log(torch.tensor(nu_star)))
+    )
+
+
+@torch.jit.script
+def NIW_compute_params_post(kappa: float, nu: float, mu_0: Tensor, psi: Tensor, codes_k: Tensor, mu_k: Tensor):
+    N_k = len(codes_k)
+    sum_k = codes_k.sum(dim=0)
+    kappa_star = kappa + N_k
+    nu_star = nu + N_k
+    mu_0_star = (mu_0 * kappa + sum_k) / kappa_star
+    codes_minus_mu = codes_k - mu_k
+    S = codes_minus_mu.T @ codes_minus_mu
+    psi_star = (
+        psi + S + (kappa * N_k / kappa_star) *
+        (mu_k - mu_0).unsqueeze(1) @ (mu_k - mu_0).unsqueeze(0)
+    )
+    return kappa_star, nu_star, mu_0_star, psi_star
+
+
+@torch.jit.script
+def NIW_compute_post_mus(mu_0: Tensor, kappa: float, N_ks: Tensor, data_mus: Tensor):
+    return ((N_ks * data_mus) + (kappa * mu_0)) / (N_ks + kappa)
+
+
+@torch.jit.script
+def NIW_compute_post_cov(kappa: float, nu: float, psi: Tensor, mu_0: Tensor, N_k: int, mu_k: Tensor, data_cov_k: Tensor):
+    D = len(mu_k)
+    return (psi + data_cov_k * N_k  # unnormalize
+            + (((kappa * N_k) / (kappa + N_k)) *
+               ((mu_k - mu_0).unsqueeze(1) *
+                (mu_k - mu_0).unsqueeze(0)))) / (nu + N_k + D + 2)
+
+
 class NIW_prior:
     """A class used to store niw parameters and compute posteriors.
     Used as a class in case we will want to update these parameters.
     """
+
     def __init__(self, hparams, prior_sigma_scale=None):
         self.name = "NIW"
-        self.prior_mu_0_choice = hparams.prior_mu_0
-        self.prior_sigma_choice = hparams.prior_sigma_choice
-        self.prior_sigma_scale = prior_sigma_scale or hparams.prior_sigma_scale
-        self.niw_kappa = hparams.prior_kappa
-        self.niw_nu = hparams.NIW_prior_nu
+        self.prior_mu_0_choice: str = hparams.prior_mu_0
+        self.prior_sigma_choice: str = hparams.prior_sigma_choice
+        self.prior_sigma_scale: float = prior_sigma_scale or hparams.prior_sigma_scale
+        self.niw_kappa: float = hparams.prior_kappa
+        self.niw_nu: float = hparams.NIW_prior_nu
 
     def init_priors(self, codes):
         if self.prior_mu_0_choice == "data_mean":
@@ -120,37 +167,18 @@ class NIW_prior:
             raise NotImplementedError()
         return self.niw_m, self.niw_psi
 
-    def compute_params_post(self, codes_k, mu_k):
-        # This is in HARD assignment.
-        N_k = len(codes_k)
-        sum_k = codes_k.sum(axis=0)
-        kappa_star = self.niw_kappa + N_k
-        nu_star = self.niw_nu + N_k
-        mu_0_star = (self.niw_m * self.niw_kappa + sum_k) / kappa_star
-        codes_minus_mu = codes_k - mu_k
-        S = codes_minus_mu.T @ codes_minus_mu
-        psi_star = (
-            self.niw_psi + S + (self.niw_kappa * N_k / kappa_star) *
-            (mu_k - self.niw_m).unsqueeze(1) @ (mu_k - self.niw_m).unsqueeze(0)
-        )
-        return kappa_star, nu_star, mu_0_star, psi_star
+    def compute_params_post(self, codes_k: Tensor, mu_k: Tensor):
+        return NIW_compute_params_post(kappa=self.niw_kappa, nu=self.niw_nu, mu_0=self.niw_m, psi=self.niw_psi, codes_k=codes_k, mu_k=mu_k)
 
-    def compute_post_mus(self, N_ks, data_mus):
+    def compute_post_mus(self, N_ks: Tensor, data_mus: Tensor):
         # N_k is the number of points in cluster K for hard assignment, and the sum of all responses to the K-th cluster for soft assignment
-        return ((N_ks.reshape(-1, 1) * data_mus) +
-                (self.niw_kappa * self.niw_m)) / (N_ks.reshape(-1, 1) +
-                                                  self.niw_kappa)
+        return NIW_compute_post_mus(self.niw_m, self.niw_kappa, N_ks.reshape(-1, 1), data_mus)
 
-    def compute_post_cov(self, N_k, mu_k, data_cov_k):
+    def compute_post_cov(self, N_k: int, mu_k: Tensor, data_cov_k: Tensor):
         # If it is hard assignments: N_k is the number of points assigned to cluster K, x_mean is their average
         # If it is soft assignments: N_k is the r_k, the sum of responses to the k-th cluster, x_mean is the data average (all the data)
-        D = len(mu_k)
         if N_k > 0:
-            return (self.niw_psi + data_cov_k * N_k  # unnormalize
-                    + (((self.niw_kappa * N_k) / (self.niw_kappa + N_k)) *
-                       ((mu_k - self.niw_m).unsqueeze(1) *
-                        (mu_k - self.niw_m).unsqueeze(0)))) / (self.niw_nu +
-                                                               N_k + D + 2)
+            return NIW_compute_post_cov(kappa=self.niw_kappa, nu=self.niw_nu, psi=self.niw_psi, mu_0=self.niw_m, N_k=N_k, mu_k=mu_k, data_cov_k=data_cov_k)
         else:
             return self.niw_psi
 
@@ -158,13 +186,7 @@ class NIW_prior:
         kappa_star, nu_star, mu_0_star, psi_star = self.compute_params_post(
             codes_k, mu_k)
         (N_k, D) = codes_k.shape
-        return (
-            -(N_k * D / 2.0) * np.log(np.pi) +
-            mvlgamma(torch.tensor(nu_star / 2.0), D) -
-            mvlgamma(torch.tensor(self.niw_nu) / 2.0, D) +
-            (self.niw_nu / 2.0) * torch.logdet(self.niw_nu * self.niw_psi) -
-            (nu_star / 2.0) * torch.logdet(nu_star * psi_star) + (D / 2.0) *
-            (np.log(self.niw_kappa) - np.log(kappa_star)))
+        return NIW_log_marginal_likelihood(D=D, N_k=N_k, nu=self.niw_nu, nu_star=nu_star, psi=self.niw_psi, psi_star=psi_star, kappa=self.niw_kappa, kappa_star=kappa_star)
 
 
 class NIG_prior:
@@ -172,6 +194,7 @@ class NIG_prior:
     Used as a class in case we will want to update these parameters.
     The NIG will model each codes channel separetly, so we will have d-dimensions for every hyperparam
     """
+
     def __init__(self, hparams, codes_dim):
         self.name = "NIG"
         self.dim = codes_dim
@@ -237,6 +260,8 @@ class NIG_prior:
         lm_ll = 0
         for d in range(self.dim):
             lm_ll += 0.5 * (torch.log(torch.abs(V_star[d])) - torch.log(torch.abs(self.nig_V[d]))) \
-                  + self.nig_a[d] * torch.log(self.nig_b[d]) - a_star[d] * torch.log(b_star[d]) \
-                  + lgamma(a_star[d]) - lgamma(self.nig_a[d]) - (N / 2.) * torch.log(torch.tensor(np.pi)) - N * torch.log(torch.tensor(2.))
+                + self.nig_a[d] * torch.log(self.nig_b[d]) - a_star[d] * torch.log(b_star[d]) \
+                + lgamma(a_star[d]) - lgamma(self.nig_a[d]) - (N / 2.) * \
+                torch.log(torch.tensor(np.pi)) - N * \
+                torch.log(torch.tensor(2.))
         return lm_ll
