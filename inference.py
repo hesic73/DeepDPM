@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
-from src.clustering_models.clusternet_modules.clusternetasmodel import ClusterNetModel
+from src.clusternet_modules.clusternetasmodel import ClusterNetModel
 from argparse import Namespace
 from src.datasets import CustomDataset
 from tqdm import tqdm

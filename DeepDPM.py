@@ -17,7 +17,7 @@ import numpy as np
 
 from src.datasets import CustomDataset
 from src.datasets import GMM_dataset
-from src.clustering_models.clusternet_modules.clusternetasmodel import ClusterNetModel
+from src.clusternet_modules.clusternetasmodel import ClusterNetModel
 from src.utils import check_args, cluster_acc
 
 from typing import Optional

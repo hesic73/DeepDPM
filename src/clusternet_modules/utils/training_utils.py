@@ -15,7 +15,7 @@ from torchvision.utils import save_image, make_grid
 
 from typing import Optional
 
-from src.clustering_models.clusternet_modules.utils.clustering_utils.clustering_operations import (
+from src.clusternet_modules.utils.clustering_utils.clustering_operations import (
     compute_pi_k, compute_mus, compute_covs, init_mus_and_covs_sub,
     compute_mus_covs_pis_subclusters)
 
