@@ -200,7 +200,7 @@ def init_mus_and_covs_sub(codes,
         )
 
         data_covs_sub = compute_data_covs_hard_assignment(
-            labels, codes_k, mus_sub, prior)
+            labels, codes_k, 2, mus_sub, prior)
         if use_priors:
             mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
             covs_sub = []
@@ -435,7 +435,7 @@ def compute_mus_covs_pis_subclusters(codes: Tensor,
         for k in range(K):
             indices = hard_assigned_labels == k
             codes_k = codes[indices]
-            r_sub = logits_sub[indices, 2 * k:2 * k + 2] # 
+            r_sub = logits_sub[indices, 2 * k:2 * k + 2]  #
             denominator = r_sub.sum(axis=0)  # sum over all points per K
 
             if indices.sum() < 2 or denominator[0] == 0 or denominator[
@@ -464,7 +464,7 @@ def compute_mus_covs_pis_subclusters(codes: Tensor,
                         denominator[k_sub])
                 mus_sub_new.extend(mus_sub_k)
                 data_covs_k = compute_data_covs_soft_assignment(
-                    r_sub, codes_k, mus_sub_k, prior.name)
+                    r_sub, codes_k, 2, mus_sub_k, prior.name)
                 if use_priors:
                     covs_k = []
                     for k_sub in range(2):
@@ -576,7 +576,6 @@ def _create_subclusters(k_sub,
                         logits_sub,
                         mus_sub,
                         pi_sub,
-
                         how_to_init_mu_sub,
                         prior,
                         device=None,
