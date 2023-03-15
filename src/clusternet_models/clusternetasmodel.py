@@ -40,7 +40,6 @@ class ClusterNetModel(pl.LightningModule):
                  hparams,
                  input_dim: int,
                  init_k: int,
-                 n_sub: int = 2,
                  centers=None,
                  init_num=0):
         """The main class of the unsupervised clustering scheme.
@@ -51,14 +50,12 @@ class ClusterNetModel(pl.LightningModule):
             input_dim (int): the shape of the input data
             train_dl (DataLoader): The dataloader to train on
             init_k (int): The initial K to start the net with
-            n_sub (int, optional): Number of subclusters per cluster. Defaults to 2.
-
+        
         """
 
         super().__init__()
         self.hparams = hparams
         self.K = init_k
-        self.n_sub = n_sub
         self.codes_dim = input_dim
         self.split_performed = False  # indicator to know whether a split was performed
         self.merge_performed = False
@@ -72,8 +69,6 @@ class ClusterNetModel(pl.LightningModule):
             # initialize subclustering net
         self.subclustering_net = Subclustering_net(
                 hparams, codes_dim=self.codes_dim, k=self.K)
-
-        self.last_key = self.K - 1  # variable to help with indexing the dict
 
         self.training_utils = training_utils(hparams)
         self.last_val_NMI = 0
@@ -207,7 +202,6 @@ class ClusterNetModel(pl.LightningModule):
                     logits,
                     sublogits,
                     self.K,
-                    self.n_sub,
                     self.mus_sub,
                     covs_sub=self.covs_sub if self.hparams.subcluster_loss
                     in ("diag_NIG", "KL_GMM_2") else None,
@@ -273,7 +267,6 @@ class ClusterNetModel(pl.LightningModule):
                     logits,
                     subclusters,
                     self.K,
-                    self.n_sub,
                     self.mus_sub,
                     covs_sub=self.covs_sub if self.hparams.subcluster_loss
                     in ("diag_NIG", "KL_GMM_2") else None,
@@ -302,8 +295,7 @@ class ClusterNetModel(pl.LightningModule):
             codes=codes,
             logits=logits,
             y=y,
-            sublogits=subclusters,
-            stage="val",
+            sublogits=subclusters
         )
 
         return {"loss": loss}
@@ -413,12 +405,12 @@ class ClusterNetModel(pl.LightningModule):
                     self.train_resp_sub,
                     self.codes.view(-1, self.codes_dim),
                     self.K,
-                    self.n_sub,
                     self.prior,
                 )
                 rank_zero_print(f"Initial pi_sub:{self.pi_sub}")
             elif (self.hparams.start_sub_clustering <= self.current_epoch
                   and not freeze_mus):
+                # rank_zero_print(f"Shapes:{self.train_resp_sub.shape}")
                 (
                     self.pi_sub,
                     self.mus_sub,
@@ -428,7 +420,6 @@ class ClusterNetModel(pl.LightningModule):
                     self.train_resp_sub,
                     self.codes,
                     self.K,
-                    self.n_sub,
                     self.mus_sub,
                     self.covs_sub,
                     self.pi_sub,
@@ -580,7 +571,6 @@ class ClusterNetModel(pl.LightningModule):
                                            self.codes,
                                            self.train_resp,
                                            self.train_resp_sub,
-                                           self.n_sub,
                                            self.hparams.how_to_init_mu_sub,
                                            self.prior,
                                            use_priors=self.hparams.use_priors)
@@ -649,7 +639,6 @@ class ClusterNetModel(pl.LightningModule):
             self.train_resp,
             self.prior,
             use_priors=self.hparams.use_priors,
-            n_sub=self.n_sub,
             how_to_init_mu_sub=self.hparams.how_to_init_mu_sub,
         )
         # adjust k

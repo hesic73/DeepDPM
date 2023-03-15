@@ -6,18 +6,18 @@
 
 import torch
 import torch.nn as nn
-from torch.nn import Module
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 import numpy as np
 from scipy.optimize import linear_sum_assignment as linear_assignment
-from torchvision.utils import save_image, make_grid
 
 from typing import Optional
 
 from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     compute_pi_k, compute_mus, compute_covs, init_mus_and_covs_sub,
     compute_mus_covs_pis_subclusters)
+
+from src.clusternet_models.utils.clustering_utils.priors import Priors
 
 
 class training_utils:
@@ -67,7 +67,19 @@ class training_utils:
             ]).any()
             return split_occured or merge_occured
 
-    def comp_cluster_params(self, train_resp, codes, pi, K:int, prior=None):
+    def comp_cluster_params(self, train_resp:Tensor, codes:Tensor, pi:Tensor, K:int, prior:Optional[Priors]=None):
+        """compute cluster parameters
+
+        Args:
+            train_resp (Tensor): (n,codes_dim)
+            codes (Tensor): (n_batch,codes_dim)
+            pi (Tensor): (K,)
+            K (int): num of clusters
+            prior (Optional[Priors], optional): Priors. Defaults to None.
+
+        Returns:
+            (Tensor,Tensor,Tensor): pi, mus, covs
+        """
         # compute pi
         pi = compute_pi_k(train_resp,
                           prior=prior if self.hparams.use_priors else None)
@@ -93,15 +105,14 @@ class training_utils:
 
     def comp_subcluster_params(
         self,
-        train_resp,
-        train_resp_sub,
-        codes,
-        K,
-        n_sub,
-        mus_sub,
-        covs_sub,
-        pi_sub,
-        prior=None,
+        train_resp:Tensor,
+        train_resp_sub:Tensor,
+        codes:Tensor,
+        K:int,
+        mus_sub:Tensor,
+        covs_sub:Tensor,
+        pi_sub:Tensor,
+        prior:Optional[Priors]=None,
     ):
 
         mus_sub, covs_sub, pi_sub = compute_mus_covs_pis_subclusters(
@@ -110,7 +121,6 @@ class training_utils:
             logits_sub=train_resp_sub,
             mus_sub=mus_sub,
             K=K,
-            n_sub=n_sub,
             use_priors=self.hparams.use_priors,
             prior=prior)
         return pi_sub, mus_sub, covs_sub
@@ -120,14 +130,12 @@ class training_utils:
                                train_resp_sub,
                                codes,
                                K,
-                               n_sub,
-                               prior=None):
+                               prior:Optional[Priors]=None):
         mus_sub, covs_sub, pi_sub = [], [], []
         for k in range(K):
             mus, covs, pis = init_mus_and_covs_sub(
                 codes=codes,
                 k=k,
-                n_sub=n_sub,
                 how_to_init_mu_sub=self.hparams.how_to_init_mu_sub,
                 logits=train_resp,
                 logits_sub=train_resp_sub,
@@ -203,7 +211,6 @@ class training_utils:
                                      logits,
                                      subresp,
                                      K,
-                                     n_sub,
                                      mus_sub,
                                      covs_sub=None,
                                      pis_sub=None):
@@ -225,7 +232,7 @@ class training_utils:
                 r = subresp[z == k, 2 * k:2 * k + 2]
                 if len(codes_k) > 0:
                     r_gmm = []
-                    for k_sub in range(n_sub):
+                    for k_sub in range(2):
                         gmm_k = MultivariateNormal(
                             mus_sub[2 * k +
                                     k_sub].double().to(device=self.device),
@@ -259,7 +266,7 @@ class training_utils:
                 codes_k = codes[z == k]
                 if codes_k.shape[0] > 0:
                     # else: handle empty clusters, won't necessarily happen
-                    for k_sub in range(n_sub):
+                    for k_sub in range(2):
                         r = subresp[z == k, k, :][:, 2 * k + k_sub]
                         mus_tag = mus_sub[2 * k + k_sub].repeat(
                             codes_k.shape[0], 1)
@@ -314,7 +321,6 @@ class training_utils:
         logits: Tensor,  # output of the model (n,dim_features)
         y: Tensor,  # ground truth labels
         sublogits: Optional[Tensor] = None,
-        stage="train",
     ):
         """A function to log data used to compute model's parameters.
 

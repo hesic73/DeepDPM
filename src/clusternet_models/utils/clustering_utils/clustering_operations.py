@@ -9,6 +9,9 @@ from torch import Tensor
 from kmeans_pytorch import kmeans as GPU_KMeans
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from src.clusternet_models.utils.clustering_utils.priors import Priors
+from typing import Optional
+from torch.distributions.constraints import positive_definite
 
 
 def init_mus_and_covs(codes,
@@ -120,7 +123,6 @@ def init_mus_and_covs(codes,
 
 def init_mus_and_covs_sub(codes,
                           k,
-                          n_sub,
                           how_to_init_mu_sub,
                           logits,
                           logits_sub,
@@ -132,16 +134,16 @@ def init_mus_and_covs_sub(codes,
         counts = []
         indices_k = logits.argmax(-1) == k
         codes_k = codes[indices_k]
-        if len(codes_k) <= n_sub:
+        if len(codes_k) <= 2:
             # empty cluster
             codes_k = codes
 
         labels, cluster_centers = GPU_KMeans(X=codes_k.detach(),
-                                             num_clusters=n_sub,
+                                             num_clusters=2,
                                              device=torch.device('cuda:0'),
                                              tqdm_flag=False)
 
-        if len(codes[indices_k]) <= n_sub:
+        if len(codes[indices_k]) <= 2:
             c = torch.tensor([0, len(codes[indices_k])])
         else:
             _, c = torch.unique(labels, return_counts=True)
@@ -150,11 +152,11 @@ def init_mus_and_covs_sub(codes,
         mus_sub = cluster_centers
 
         data_covs_sub = compute_data_covs_hard_assignment(
-            labels, codes_k, n_sub, mus_sub, prior)
+            labels, codes_k, mus_sub, prior)
         if use_priors:
             mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
             covs_sub = []
-            for k in range(n_sub):
+            for k in range(2):
                 covs_sub_k = prior.compute_post_cov(
                     counts[k], codes_k[labels == k].mean(axis=0),
                     data_covs_sub[k])
@@ -171,20 +173,20 @@ def init_mus_and_covs_sub(codes,
         counts = []
         indices_k = logits.argmax(-1) == k
         codes_k = codes[indices_k]
-        if len(codes_k) <= n_sub:
+        if len(codes_k) <= 2:
             # empty cluster
             codes_k = codes
         pca = PCA(n_components=1).fit(codes_k.detach().cpu())
         pca_codes = pca.fit_transform(codes_k.detach().cpu())
-        # kmeans = KMeans(n_clusters=n_sub, random_state=random_state).fit(pca_codes)
+        # kmeans = KMeans(n_clusters=2, random_state=random_state).fit(pca_codes)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         labels, cluster_centers = GPU_KMeans(
             X=torch.from_numpy(pca_codes).to(device=device),
-            num_clusters=n_sub,
+            num_clusters=2,
             device=torch.device(device),
             tqdm_flag=False)
 
-        if len(codes[indices_k]) <= n_sub:
+        if len(codes[indices_k]) <= 2:
             c = torch.tensor([0, len(codes[indices_k])])
         else:
             _, c = torch.unique(labels, return_counts=True)
@@ -198,11 +200,11 @@ def init_mus_and_covs_sub(codes,
         )
 
         data_covs_sub = compute_data_covs_hard_assignment(
-            labels, codes_k, n_sub, mus_sub, prior)
+            labels, codes_k, mus_sub, prior)
         if use_priors:
             mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
             covs_sub = []
-            for k in range(n_sub):
+            for k in range(2):
                 cov_sub_k = prior.compute_post_cov(
                     counts[k], codes_k[labels == k].mean(axis=0),
                     data_covs_sub[k])
@@ -276,19 +278,19 @@ def compute_mus_soft_assignment(codes, logits, K, constant=True):
     return mus
 
 
-def compute_pi_k(logits: Tensor, prior=None) -> Tensor:
+def compute_pi_k(logits: Tensor, prior: Optional[Priors] = None) -> Tensor:
     """compute pi_k
 
     Args:
-        logits (Tensor): (N,K) for Classifier and (N,2K) for Subclustering
+        logits (Tensor): (N,K) for Classifier
         prior ({Priors}, optional): Prior. Defaults to None.
 
     Returns:
-        Tensor: pi
+        Tensor: pi (K,)
     """
     N = logits.shape[0]
     # sum for prob for each K (across all points) \sum_{i=1}^{N}P(z_i = k)
-    r_sum = logits.sum(dim=0)
+    r_sum = logits.sum(dim=0)  # (K,)
     if len(r_sum.shape) > 1:
         # this is sub clusters' pi need another sum
         r_sum = r_sum.sum(axis=0)
@@ -298,12 +300,28 @@ def compute_pi_k(logits: Tensor, prior=None) -> Tensor:
     return pi
 
 
-def compute_data_covs_soft_assignment(logits, codes, K, mus, prior_name="NIW"):
+def compute_data_covs_soft_assignment(logits: Tensor,
+                                      codes: Tensor,
+                                      K: int,
+                                      mus: Tensor,
+                                      prior_name: str = "NIW") -> Tensor:
+    """compute covariance by soft assignment
+
+    Args:
+        codes (Tensor): (n,codes_dim)
+        logits (Tensor): (n,K)
+        K (int): #clusters
+        mus (Tensor): (K,codes_dim)
+        prior_name (str): NIW or NIG Defaults to NIW.
+
+    Returns:
+        Tensor: covariance (K,codes_dim,codes_dim)
+    """
     # compute the data covs in soft assignment
     prior_name = prior_name or "NIW"
     if prior_name == "NIW":
         covs = []
-        n_k = logits.sum(axis=0)
+        n_k = logits.sum(axis=0)  #
         n_k += 0.0001
         for k in range(K):
             if len(logits) == 0 or len(codes) == 0:
@@ -324,15 +342,27 @@ def compute_data_covs_soft_assignment(logits, codes, K, mus, prior_name="NIW"):
                                                      mus=mus)
 
 
-def compute_mus(codes,
-                logits,
-                pi,
-                K,
-                how_to_compute_mu,
-                use_priors=True,
-                prior=None,
-                random_state=0,
-                device="cpu"):
+def compute_mus(codes: Tensor,
+                logits: Tensor,
+                pi: Tensor,
+                K: int,
+                how_to_compute_mu: str,
+                use_priors: bool = True,
+                prior: Optional[Priors] = None) -> Tensor:
+    """compute mus
+
+    Args:
+        codes (Tensor): (n,codes_dim)
+        logits (Tensor): (n,K)
+        pi (Tensor): (K,)
+        K (int): #clusters
+        how_to_compute_mu (str): kmeans or soft_assign
+        use_priors (bool, optional): whether to use priors. Defaults to True.
+        prior (Optional[Priors], optional): Priors. Defaults to None.
+
+    Returns:
+        mus: (K,codes_dim)
+    """
     if how_to_compute_mu == "kmeans":
         if K == 1:
             cluster_centers = torch.mean(codes.detach(), dim=0).unsqueeze(0)
@@ -353,8 +383,25 @@ def compute_mus(codes,
     return mus
 
 
-def compute_covs(codes, logits, K, mus, use_priors=True, prior=None):
-    from torch.distributions.constraints import positive_definite
+def compute_covs(codes: Tensor,
+                 logits: Tensor,
+                 K: int,
+                 mus: Tensor,
+                 use_priors: bool = True,
+                 prior: Optional[Priors] = None):
+    """compute covariance
+
+    Args:
+        codes (Tensor): (n,codes_dim)
+        logits (Tensor): (n,K)
+        K (int): #clusters
+        mus (Tensor): (K,codes_dim)
+        use_priors (bool, optional): whether to use priors. Defaults to True.
+        prior (Optional[Priors], optional): Priors. Defaults to None.
+
+    Returns:
+        Tensor: covariance (K,codes_dim,codes_dim)
+    """
     data_covs = compute_data_covs_soft_assignment(
         codes=codes,
         logits=logits,
@@ -362,7 +409,7 @@ def compute_covs(codes, logits, K, mus, use_priors=True, prior=None):
         mus=mus,
         prior_name=prior.name if prior else None)
     covs = []
-    r = logits.sum(axis=0)
+    r = logits.sum(axis=0)  #(K,)
     for k in range(K):
         if use_priors:
             cov_k = prior.compute_post_cov(r[k], mus[k], data_covs[k])
@@ -373,31 +420,30 @@ def compute_covs(codes, logits, K, mus, use_priors=True, prior=None):
     return covs
 
 
-def compute_mus_covs_pis_subclusters(codes,
-                                     logits,
-                                     logits_sub,
-                                     mus_sub,
-                                     K,
-                                     n_sub,
+def compute_mus_covs_pis_subclusters(codes: Tensor,
+                                     logits: Tensor,
+                                     logits_sub: Tensor,
+                                     mus_sub: Tensor,
+                                     K: int,
                                      hard_assignment: bool = True,
                                      use_priors: bool = True,
-                                     prior=None):
+                                     prior: Optional[Priors] = None):
     pi_sub = compute_pi_k(logits_sub, prior=prior if use_priors else None)
     if hard_assignment:
         mus_sub_new, covs_sub_new = [], []
+        hard_assigned_labels = logits.argmax(-1)
         for k in range(K):
-            indices = logits.argmax(-1) == k
+            indices = hard_assigned_labels == k
             codes_k = codes[indices]
-            r_sub = logits_sub[indices, 2 * k:2 * k + 2]
+            r_sub = logits_sub[indices, 2 * k:2 * k + 2] # 
             denominator = r_sub.sum(axis=0)  # sum over all points per K
 
             if indices.sum() < 2 or denominator[0] == 0 or denominator[
-                    1] == 0 or len(torch.unique(r_sub.argmax(-1))) < n_sub:
+                    1] == 0 or len(torch.unique(r_sub.argmax(-1))) < 2:
                 # Empty subcluster encountered, re-initializing cluster {k}
                 mus_sub, covs_sub, pi_sub_ = init_mus_and_covs_sub(
                     codes=codes,
                     k=k,
-                    n_sub=n_sub,
                     logits=logits,
                     logits_sub=logits_sub,
                     how_to_init_mu_sub="kmeans_1d",
@@ -411,17 +457,17 @@ def compute_mus_covs_pis_subclusters(codes,
                 covs_sub_new.append(covs_sub[1])
             else:
                 mus_sub_k = []
-                for k_sub in range(n_sub):
+                for k_sub in range(2):
                     z_sub = r_sub[:, k_sub]
                     mus_sub_k.append(
                         (z_sub.reshape(-1, 1) * codes_k.cpu()).sum(axis=0) /
                         denominator[k_sub])
                 mus_sub_new.extend(mus_sub_k)
                 data_covs_k = compute_data_covs_soft_assignment(
-                    r_sub, codes_k, n_sub, mus_sub_k, prior.name)
+                    r_sub, codes_k, mus_sub_k, prior.name)
                 if use_priors:
                     covs_k = []
-                    for k_sub in range(n_sub):
+                    for k_sub in range(2):
                         cov_k = data_covs_k[k_sub]
                         if torch.isnan(cov_k).any():
                             # at least one of the subclusters has empty assignments
@@ -448,7 +494,6 @@ def compute_mus_subclusters(codes,
                             pi_sub,
                             mus_sub,
                             K,
-                            n_sub,
                             hard_assignment=True,
                             use_priors=True,
                             prior=None):
@@ -466,7 +511,7 @@ def compute_mus_subclusters(codes,
                                                torch.float32))
             else:
                 codes_k = codes[indices]
-                for k_sub in range(n_sub):
+                for k_sub in range(2):
                     if denominator[k_sub] == 0:
                         # empty cluster - do not change mu sub
                         mus_sub_new.append(
@@ -490,7 +535,6 @@ def compute_covs_subclusters(codes,
                              logits,
                              logits_sub,
                              K,
-                             n_sub,
                              mus_sub,
                              covs_sub,
                              pi_sub,
@@ -501,10 +545,10 @@ def compute_covs_subclusters(codes,
         codes_k = codes[indices]
         r_sub = logits_sub[indices, 2 * k:2 * k + 2]
         data_covs_k = compute_data_covs_soft_assignment(
-            r_sub, codes_k, n_sub, mus_sub[2 * k:2 * k + 2], prior.name)
+            r_sub, codes_k, mus_sub[2 * k:2 * k + 2], prior.name)
         if use_priors:
             covs_k = []
-            for k_sub in range(n_sub):
+            for k_sub in range(2):
                 cov_k = prior.compute_post_cov(
                     r_sub.sum(axis=0)[k_sub], mus_sub[2 * k + k_sub],
                     data_covs_k[k_sub])
@@ -532,7 +576,7 @@ def _create_subclusters(k_sub,
                         logits_sub,
                         mus_sub,
                         pi_sub,
-                        n_sub,
+
                         how_to_init_mu_sub,
                         prior,
                         device=None,
@@ -566,13 +610,13 @@ def _create_subclusters(k_sub,
 
         if how_to_init_mu_sub == "kmeans":
             labels, cluster_centers = GPU_KMeans(X=codes_sub.detach(),
-                                                 num_clusters=n_sub,
+                                                 num_clusters=2,
                                                  device=torch.device('cuda:0'),
                                                  tqdm_flag=False)
             new_mus = cluster_centers.cpu()
             new_covs = compute_data_covs_hard_assignment(labels=labels,
                                                          codes=codes_sub,
-                                                         K=n_sub,
+                                                         K=2,
                                                          mus=new_mus,
                                                          prior=prior)
             _, new_pis = torch.unique(labels, return_counts=True)
@@ -585,7 +629,7 @@ def _create_subclusters(k_sub,
             device = "cuda" if torch.cuda.is_available() else "cpu"
             labels, cluster_centers = GPU_KMeans(
                 X=torch.from_numpy(pca_codes).to(device=device),
-                num_clusters=n_sub,
+                num_clusters=2,
                 device=torch.device(device),
                 tqdm_flag=False)
 
@@ -596,7 +640,7 @@ def _create_subclusters(k_sub,
             ).cpu()
             new_covs = compute_data_covs_hard_assignment(labels=labels,
                                                          codes=codes_sub,
-                                                         K=n_sub,
+                                                         K=2,
                                                          mus=new_mus,
                                                          prior=prior)
             _, new_pis = torch.unique(labels, return_counts=True)
@@ -607,7 +651,7 @@ def _create_subclusters(k_sub,
             new_mus = prior.compute_post_mus(
                 counts, new_mus)  # up until now we didn't use this
             covs = []
-            for k in range(n_sub):
+            for k in range(2):
                 new_cov_k = prior.compute_post_cov(
                     counts[k], codes_sub[labels == k].mean(axis=0),
                     new_covs[k])

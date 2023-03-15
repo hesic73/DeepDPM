@@ -4,6 +4,7 @@
 # Copyright (c) 2022 Meitar Ronen
 #
 
+from typing import Optional
 import torch
 from torch import mvlgamma
 from torch import lgamma
@@ -48,7 +49,7 @@ class Priors:
         else:
             return counts
 
-    def comp_post_pi(self, pi):
+    def comp_post_pi(self, pi:Tensor)->Tensor:
         if self.pi_prior:
             return self.pi_prior.comp_post_pi(pi, self.pi_counts)
         else:
@@ -63,7 +64,7 @@ class Priors:
     def compute_params_post(self, codes_k, mu_k):
         return self.mus_covs_prior.compute_params_post(codes_k, mu_k)
 
-    def compute_post_mus(self, N_ks, data_mus):
+    def compute_post_mus(self, N_ks:Tensor, data_mus:Tensor)->Tensor:
         return self.mus_covs_prior.compute_post_mus(N_ks, data_mus)
 
     def compute_post_cov(self, N_k, mu_k, data_cov_k):
@@ -87,7 +88,7 @@ class Dirichlet_prior:
             counts = self.counts
         return counts + self.p_counts
 
-    def comp_post_pi(self, pi, counts=None):
+    def comp_post_pi(self, pi:Tensor, counts:Optional[float]=None)->Tensor:
         if counts is None:
             # counts = 0.001
             counts = 0.1

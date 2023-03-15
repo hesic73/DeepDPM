@@ -196,7 +196,6 @@ def update_subclusters_params_split(mus_sub,
                                     codes,
                                     logits,
                                     logits_sub,
-                                    n_sub,
                                     how_to_init_mu_sub,
                                     prior,
                                     use_priors=True):
@@ -218,7 +217,6 @@ def update_subclusters_params_split(mus_sub,
                                 logits_sub=logits_sub,
                                 mus_sub=mus_sub,
                                 pi_sub=pi_sub,
-                                n_sub=n_sub,
                                 how_to_init_mu_sub=how_to_init_mu_sub,
                                 prior=prior,
                                 use_priors=use_priors)
@@ -229,7 +227,6 @@ def update_subclusters_params_split(mus_sub,
             logits_sub=logits_sub,
             mus_sub=mus_sub,
             pi_sub=pi_sub,
-            n_sub=n_sub,
             how_to_init_mu_sub=how_to_init_mu_sub,
             prior=prior,
             use_priors=use_priors)
@@ -246,7 +243,7 @@ def update_subclusters_params_split(mus_sub,
 
 def update_models_parameters_split(split_decisions, mus, covs, pi,
                                    mus_ind_to_split, mus_sub, covs_sub, pi_sub,
-                                   codes, logits, logits_sub, n_sub,
+                                   codes, logits, logits_sub, 
                                    how_to_init_mu_sub, prior, use_priors):
     mus_ind_to_split = torch.nonzero(split_decisions, as_tuple=False)
     # update the mus, covs and pis
@@ -263,7 +260,6 @@ def update_models_parameters_split(split_decisions, mus, covs, pi,
         codes,
         logits,
         logits_sub,
-        n_sub,
         how_to_init_mu_sub,
         prior,
         use_priors=use_priors)
@@ -281,7 +277,6 @@ def update_clusters_params_merge(
     logits,
     prior,
     use_priors,
-    n_sub,
     how_to_init_mu_sub,
 ):
     mus_not_merged = mus[torch.logical_not(inds_to_mask)]
@@ -341,7 +336,6 @@ def update_subclusters_params_merge(mus_lists_to_merge,
                                     pi_sub,
                                     codes,
                                     logits,
-                                    n_sub,
                                     how_to_init_mu_sub,
                                     prior,
                                     use_priors=True):
@@ -368,7 +362,6 @@ def update_subclusters_params_merge(mus_lists_to_merge,
             mus_sub_k, covs_sub_k, pi_sub_k = init_mus_and_covs_sub(
                 codes_merged,
                 k=0,
-                n_sub=n_sub,
                 how_to_init_mu_sub=how_to_init_mu_sub,
                 logits=torch.zeros(len(codes_merged), 1),
                 logits_sub=None,
@@ -403,7 +396,6 @@ def update_models_parameters_merge(
     logits,
     prior,
     use_priors,
-    n_sub,
     how_to_init_mu_sub,
 ):
 
@@ -418,7 +410,6 @@ def update_models_parameters_merge(
         logits,
         prior,
         use_priors,
-        n_sub,
         how_to_init_mu_sub,
     )
     mus_sub_new, covs_sub_new, pi_sub_new = update_subclusters_params_merge(
@@ -432,7 +423,6 @@ def update_models_parameters_merge(
         pi_sub,
         codes,
         logits,
-        n_sub,
         how_to_init_mu_sub,
         prior,
         use_priors=use_priors)
