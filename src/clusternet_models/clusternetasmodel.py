@@ -13,21 +13,21 @@ import pytorch_lightning as pl
 from sklearn.metrics.cluster import normalized_mutual_info_score
 from sklearn.metrics import adjusted_rand_score, silhouette_score, adjusted_mutual_info_score, homogeneity_completeness_v_measure
 
-from src.clusternet_modules.utils.plotting_utils import PlotUtils
-from src.clusternet_modules.utils.training_utils import training_utils
-from src.clusternet_modules.utils.clustering_utils.priors import (
+from src.clusternet_models.utils.plotting_utils import PlotUtils
+from src.clusternet_models.utils.training_utils import training_utils
+from src.clusternet_models.utils.clustering_utils.priors import (
     Priors, )
-from src.clusternet_modules.utils.clustering_utils.clustering_operations import (
+from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     init_mus_and_covs,
     compute_data_covs_hard_assignment,
 )
-from src.clusternet_modules.utils.clustering_utils.split_merge_operations import (
+from src.clusternet_models.utils.clustering_utils.split_merge_operations import (
     update_models_parameters_split,
     split_step,
     merge_step,
     update_models_parameters_merge,
 )
-from src.clusternet_modules.models.Classifiers import MLP_Classifier, Subclustering_net
+from src.clusternet_models.models.Classifiers import MLP_Classifier, Subclustering_net
 
 from typing import Dict, Any, Optional
 from pytorch_lightning.utilities.distributed import rank_zero_only

@@ -1,6 +1,6 @@
 import argparse
 import torch
-from src.clusternet_modules.clusternetasmodel import ClusterNetModel
+from src.clusternet_models.clusternetasmodel import ClusterNetModel
 from src.datasets import CustomDataset
 
 # LOAD MODEL FROM CHECKPOINT
