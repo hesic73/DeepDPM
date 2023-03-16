@@ -247,7 +247,7 @@ class Subclustering_net(nn.Module):
                               k:self.hidden_dim * (k + 1)] = 1
 
         self.class_fc2.weight.data *= gradient_mask_fc2
-        self.class_fc2.weight.register_hook(
+        self.hood_handle=self.class_fc2.weight.register_hook(
             lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
         # weights are zero and their grad will always be 0 so won't change
 
@@ -309,6 +309,8 @@ class Subclustering_net(nn.Module):
                     weights = self._initalize_weights_split(weights,
                                                             init_new_weights,
                                                             num=1)
+                
+                print(self.class_fc2.weight.shape)
                 self.class_fc2.weight.data[2 * i:2 * (i + 1), self.hidden_dim *
                                            i:self.hidden_dim *
                                            (i + 1)] = weights

@@ -31,6 +31,7 @@ from src.clusternet_models.models.Classifiers import MLP_Classifier, Subclusteri
 
 from typing import Dict, Any, Optional
 from pytorch_lightning.utilities.distributed import rank_zero_only
+from argparse import Namespace
 
 rank_zero_print = rank_zero_only(print)
 
@@ -317,7 +318,7 @@ class ClusterNetModel(pl.LightningModule):
         Args:
             outputs ([type]): [description]
         """
-        
+
         self.concatenate_net_params(stage='train')
 
         if self.current_training_stage == "gather_codes":
@@ -929,7 +930,7 @@ class ClusterNetModel(pl.LightningModule):
         attributes = [
             "train_gt", "train_resp", "train_resp_sub", "mus", "mus_sub",
             "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior",
-            "pi_sub"
+            "pi_sub", "K", 'covs_sub'
         ]
 
         for attr in attributes:
@@ -939,13 +940,11 @@ class ClusterNetModel(pl.LightningModule):
         return super().on_save_checkpoint(checkpoint)
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        # print("{}".format(checkpoint["state_dict"].keys()))
         attributes = [
             "train_gt", "train_resp", "train_resp_sub", "mus", "mus_sub",
             "covs", "pi", "freeze_mus_after_init_until", "plot_utils", "prior",
-            "pi_sub"
+            "pi_sub", "K", 'covs_sub'
         ]
-
         maybe_mismateched_parameters = [
             'cluster_net.class_fc1.weight', 'cluster_net.class_fc1.bias',
             'cluster_net.class_fc2.weight', 'cluster_net.class_fc2.bias',
@@ -964,4 +963,16 @@ class ClusterNetModel(pl.LightningModule):
         for attr in attributes:
             if attr in checkpoint.keys():
                 self.__setattr__(attr, checkpoint[attr])
+
+        self.subclustering_net.hood_handle.remove()
+        gradient_mask_fc2 = torch.zeros(
+            2 * self.K, self.subclustering_net.hidden_dim * self.K)
+        for k in range(self.K):
+            gradient_mask_fc2[2 * k:2 * (k + 1), self.subclustering_net.hidden_dim *
+                              k:self.subclustering_net.hidden_dim * (k + 1)] = 1
+        self.subclustering_net.hood_handle = self.subclustering_net.class_fc2.weight.register_hook(
+            lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
+
+        self.subclustering_net.K = self.K
+
         return super().on_load_checkpoint(checkpoint)
