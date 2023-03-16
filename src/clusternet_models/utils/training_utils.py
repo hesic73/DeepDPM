@@ -138,10 +138,8 @@ class training_utils:
                 k=k,
                 how_to_init_mu_sub=self.hparams.how_to_init_mu_sub,
                 logits=train_resp,
-                logits_sub=train_resp_sub,
                 prior=prior,
-                use_priors=self.hparams.use_priors,
-                device=self.device)
+                use_priors=self.hparams.use_priors)
             mus_sub.append(mus)
             covs_sub.append(covs)
             pi_sub.append(pis)

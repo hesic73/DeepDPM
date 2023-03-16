@@ -121,77 +121,39 @@ def init_mus_and_covs(codes,
         return mus, covs, pi, logits.argmax(axis=1)
 
 
-def init_mus_and_covs_sub(codes,
-                          k,
-                          how_to_init_mu_sub,
-                          logits,
-                          logits_sub,
-                          prior=None,
-                          use_priors=True,
-                          random_state=0,
-                          device="cpu"):
-    if how_to_init_mu_sub == "kmeans":
-        counts = []
-        indices_k = logits.argmax(-1) == k
-        codes_k = codes[indices_k]
-        if len(codes_k) <= 2:
-            # empty cluster
-            codes_k = codes
+def init_mus_and_covs_sub(codes: Tensor,
+                          k: int,
+                          how_to_init_mu_sub: str,
+                          logits: Tensor,
+                          prior: Optional[Priors] = None,
+                          use_priors: bool = True):
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    indices_k = logits.argmax(-1) == k
+    codes_k = codes[indices_k]
+    if len(codes_k) <= 2:
+        # empty cluster
+        print(f"empty cluster {k}!!!")
+        codes_k = codes
+
+    if how_to_init_mu_sub == "kmeans":
         labels, cluster_centers = GPU_KMeans(X=codes_k.detach(),
                                              num_clusters=2,
-                                             device=torch.device('cuda:0'),
+                                             device=torch.device(device),
                                              tqdm_flag=False)
 
-        if len(codes[indices_k]) <= 2:
-            c = torch.tensor([0, len(codes[indices_k])])
-        else:
-            _, c = torch.unique(labels, return_counts=True)
-        counts.append(c)
-        counts = counts[0]  # added by hesicheng. I don't know what I'm doing
         mus_sub = cluster_centers
-
-        data_covs_sub = compute_data_covs_hard_assignment(
-            labels, codes_k, mus_sub, prior)
-        if use_priors:
-            mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
-            covs_sub = []
-            for k in range(2):
-                covs_sub_k = prior.compute_post_cov(
-                    counts[k], codes_k[labels == k].mean(axis=0),
-                    data_covs_sub[k])
-                covs_sub.append(covs_sub_k)
-            covs_sub = torch.stack(covs_sub)
-        else:
-            covs_sub = data_covs_sub
-
-        pi_sub = torch.cat(counts) / float(len(codes))
-        return mus_sub, covs_sub, pi_sub
 
     elif how_to_init_mu_sub == "kmeans_1d":
         # pca codes to 1D then perform 1d kmeans
-        counts = []
-        indices_k = logits.argmax(-1) == k
-        codes_k = codes[indices_k]
-        if len(codes_k) <= 2:
-            # empty cluster
-            codes_k = codes
         pca = PCA(n_components=1).fit(codes_k.detach().cpu())
         pca_codes = pca.fit_transform(codes_k.detach().cpu())
-        # kmeans = KMeans(n_clusters=2, random_state=random_state).fit(pca_codes)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+
         labels, cluster_centers = GPU_KMeans(
             X=torch.from_numpy(pca_codes).to(device=device),
             num_clusters=2,
             device=torch.device(device),
             tqdm_flag=False)
-
-        if len(codes[indices_k]) <= 2:
-            c = torch.tensor([0, len(codes[indices_k])])
-        else:
-            _, c = torch.unique(labels, return_counts=True)
-        counts.append(c)
-        counts = counts[0]
 
         mus_sub = torch.tensor(
             pca.inverse_transform(cluster_centers.cpu().numpy()),
@@ -199,25 +161,29 @@ def init_mus_and_covs_sub(codes,
             requires_grad=False,
         )
 
-        data_covs_sub = compute_data_covs_hard_assignment(
-            labels, codes_k, 2, mus_sub, prior)
-        if use_priors:
-            mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
-            covs_sub = []
-            for k in range(2):
-                cov_sub_k = prior.compute_post_cov(
-                    counts[k], codes_k[labels == k].mean(axis=0),
-                    data_covs_sub[k])
-                covs_sub.append(cov_sub_k)
-            covs_sub = torch.stack(covs_sub)
-        else:
-            covs_sub = data_covs_sub
-
-        pi_sub = counts / float(len(codes))
-        return mus_sub, covs_sub, pi_sub
-
     elif how_to_init_mu_sub == "soft_assign":
         raise NotImplementedError()
+
+    if len(codes_k) <= 2:
+        counts = torch.tensor([0, len(codes_k)])
+    else:
+        _, counts = torch.unique(labels, return_counts=True)
+
+    data_covs_sub = compute_data_covs_hard_assignment(
+        labels, codes_k, 2, mus_sub, prior)
+    if use_priors:
+        mus_sub = prior.compute_post_mus(counts, mus_sub.cpu())
+        covs_sub = []
+        for k in range(2):
+            covs_sub_k = prior.compute_post_cov(
+                counts[k], codes_k[labels == k].mean(axis=0),
+                data_covs_sub[k])
+            covs_sub.append(covs_sub_k)
+        covs_sub = torch.stack(covs_sub)
+    else:
+        covs_sub = data_covs_sub
+    pi_sub = counts / float(len(codes))
+    return mus_sub, covs_sub, pi_sub
 
 
 def compute_data_sigma_sq_hard_assignment(labels, codes, K, mus):
@@ -409,7 +375,7 @@ def compute_covs(codes: Tensor,
         mus=mus,
         prior_name=prior.name if prior else None)
     covs = []
-    r = logits.sum(axis=0)  #(K,)
+    r = logits.sum(axis=0)  # (K,)
     for k in range(K):
         if use_priors:
             cov_k = prior.compute_post_cov(r[k], mus[k], data_covs[k])
@@ -445,11 +411,9 @@ def compute_mus_covs_pis_subclusters(codes: Tensor,
                     codes=codes,
                     k=k,
                     logits=logits,
-                    logits_sub=logits_sub,
                     how_to_init_mu_sub="kmeans_1d",
                     prior=prior,
-                    use_priors=use_priors,
-                    device=codes.device)
+                    use_priors=use_priors)
                 pi_sub[2 * k:2 * k + 2] = pi_sub_
                 mus_sub_new.append(mus_sub[0])
                 mus_sub_new.append(mus_sub[1])

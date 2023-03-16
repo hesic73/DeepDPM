@@ -18,3 +18,4 @@ SCAN 分类, MoCo
 - 3/13 找到原repository的一个bug，修复后微调超参使得低init_k也能split，高init_k也不至于分太多类
 - 3/14 跑SCAN
 
+https://jakevdp.github.io/PythonDataScienceHandbook/04.10-customizing-ticks.html 改进结果展示

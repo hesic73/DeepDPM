@@ -364,10 +364,8 @@ def update_subclusters_params_merge(mus_lists_to_merge,
                 k=0,
                 how_to_init_mu_sub=how_to_init_mu_sub,
                 logits=torch.zeros(len(codes_merged), 1),
-                logits_sub=None,
                 prior=prior,
-                use_priors=use_priors,
-                device=codes.device)
+                use_priors=use_priors)
             mus_sub_merged.append(mus_sub_k)
             covs_sub_merged.append(covs_sub_k)
             pi_sub_merged.append(pi_sub_k)

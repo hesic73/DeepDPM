@@ -91,8 +91,8 @@ class Dirichlet_prior:
     def comp_post_pi(self, pi:Tensor, counts:Optional[float]=None)->Tensor:
         if counts is None:
             # counts = 0.001
-            # counts = 0.1
-            counts=0.0
+            counts = 0.1
+            # counts = 0.0
         return (pi + counts) / (pi + counts).sum()
 
     def get_sum_counts(self):
