@@ -9,7 +9,7 @@
 #SBATCH --nodes=1 
 #SBATCH --ntasks-per-node=16
 #SBATCH --gres=gpu:1
-#SBATCH --nodelist=gpu003
+#SBATCH --nodelist=gpu002
 
 #SBATCH --mail-user hesicheng2001@163.com
 #SBATCH --chdir /Share/UserHome/tzhao/2023/sicheng/GraduationDesign/DeepDPM

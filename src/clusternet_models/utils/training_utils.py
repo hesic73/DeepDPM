@@ -11,7 +11,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import numpy as np
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
-from typing import Optional
+from typing import Optional,List
 
 from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     compute_pi_k, compute_mus, compute_covs, init_mus_and_covs_sub,
@@ -313,11 +313,11 @@ class training_utils:
 
     @staticmethod
     def log_codes_and_responses(
-        model_codes,
-        model_gt,
-        model_resp,
-        model_resp_sub,
-        codes,
+        model_codes:List[Tensor],
+        model_gt:List[Tensor],
+        model_resp:List[Tensor],
+        model_resp_sub:List[Tensor],
+        codes:Tensor,
         logits: Tensor,  # output of the model (n,dim_features)
         y: Tensor,  # ground truth labels
         sublogits: Optional[Tensor] = None,
@@ -325,29 +325,19 @@ class training_utils:
         """A function to log data used to compute model's parameters.
 
         Args:
-            codes (torch.tensor): the current batch codes (in emedding space)
-            logits (torch.tensor): the clustering net responses to the codes
-            y (torch.tensor): the ground truth labels
-            sublogits ([type], optional): [description]. Defaults to None. The subclustering nets response to the codes
+            model_* (List[Tensor]): buffers for *. After each epoch they are concatenated
+            codes (torch.tensor): the current batch codes (in emedding space) (n_batch,codes_dim)
+            logits (torch.tensor): the clustering net responses to the codes (n_batch,K)
+            y (torch.tensor): the ground truth labels (n_batch,)
+            sublogits (Tensor, optional): (n_batch,2K). Defaults to None. The subclustering nets response to the codes
         """
-        if model_gt == []:
-            # first batch of the epoch
-            if codes is not None:
-                model_codes = codes.detach().cpu()
-            model_gt = y.detach().cpu()
-            if logits is not None:
-                model_resp = logits.detach().cpu()
-            if sublogits is not None:
-                model_resp_sub = sublogits.detach().cpu()
-        else:
-            if codes is not None:
-                model_codes = torch.cat([model_codes, codes.detach().cpu()])
-            model_gt = torch.cat([model_gt, y.detach().cpu()])
-            if logits is not None:
-                model_resp = torch.cat([model_resp, logits.detach().cpu()])
-            if sublogits is not None:
-                model_resp_sub = torch.cat(
-                    [model_resp_sub, sublogits.detach().cpu()])
-        return model_codes, model_gt, model_resp, model_resp_sub
+        
+        if codes is not None:
+            model_codes.append(codes.detach().cpu())
+        model_gt.append(y.detach().cpu())
+        if logits is not None:
+            model_resp.append(logits.detach().cpu())
+        if sublogits is not None:
+            model_resp_sub.append(sublogits.detach().cpu())
 
     

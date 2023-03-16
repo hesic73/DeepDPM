@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT=DeepDPM_CNG_test
-EXP_NAME=init_k_8
+EXP_NAME=init_k_3
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
@@ -15,7 +15,7 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --gpus 0"
 
 
-EXPERIMENT_ARGS=" --init_k 8 \
+EXPERIMENT_ARGS=" --init_k 3 \
 --clusternet_hidden_layer_list 50 50 \
 --start_computing_params 25 \
 --how_to_compute_mu kmeans \
