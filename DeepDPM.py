@@ -14,6 +14,7 @@ from pytorch_lightning.utilities import seed
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from sklearn.metrics import adjusted_rand_score as ARI
 import numpy as np
+import torch
 
 from src.datasets import CustomDataset
 from src.datasets import GMM_dataset
@@ -351,7 +352,7 @@ def need_resume(checkpoint_dir: str) -> Optional[str]:
 
     checkpoint_path = os.path.join(checkpoint_dir, files[0])
 
-    return checkpoint_path
+    return os.path.abspath(checkpoint_path)
 
 
 def get_checkpoint_callback(args: Namespace):
@@ -400,18 +401,26 @@ def train_cluster_net():
 
     seed.seed_everything(args.seed)
 
+
+    resume_path=need_resume(f"./saved_models/{args.dataset}/{args.exp_name}")
+    if resume_path is not None:
+        ckpt=torch.load(resume_path,map_location=torch.device('cpu'))
+        # make things easier
+        args.init_k=ckpt['K']
+        print(f"override init_k to {args.init_k}")
+
     model = ClusterNetModel(hparams=args,
                             input_dim=dataset_obj.data_dim,
                             init_k=args.init_k)
 
+    # if accelerator=ddp, loading from checkpoint has a weird bug on which I have no ideas
     trainer = pl.Trainer(accelerator='ddp',
                          logger=logger,
                          max_epochs=args.max_epochs,
                          gpus=args.gpus,
                          num_sanity_val_steps=0,
                          checkpoint_callback=get_checkpoint_callback(args),
-                         resume_from_checkpoint=need_resume(
-                             f"./saved_models/{args.dataset}/{args.exp_name}"),
+                         resume_from_checkpoint=resume_path,
                          progress_bar_refresh_rate=0)
     trainer.fit(model, train_loader, val_loader)
 

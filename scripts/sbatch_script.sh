@@ -20,4 +20,5 @@ pwd
 which python
 
 ./scripts/run_experiment.sh
+date +%c
 echo 跑完了喵

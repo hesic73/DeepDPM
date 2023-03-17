@@ -963,16 +963,41 @@ class ClusterNetModel(pl.LightningModule):
         for attr in attributes:
             if attr in checkpoint.keys():
                 self.__setattr__(attr, checkpoint[attr])
+        
 
-        self.subclustering_net.hood_handle.remove()
-        gradient_mask_fc2 = torch.zeros(
-            2 * self.K, self.subclustering_net.hidden_dim * self.K)
-        for k in range(self.K):
-            gradient_mask_fc2[2 * k:2 * (k + 1), self.subclustering_net.hidden_dim *
-                              k:self.subclustering_net.hidden_dim * (k + 1)] = 1
-        self.subclustering_net.hood_handle = self.subclustering_net.class_fc2.weight.register_hook(
-            lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
+        # there seems to be some subtle differences between passing init_k=k and manually reinitializing everything here
+        # and trainer still throws a runtimeerror when accelerator=ddp
 
-        self.subclustering_net.K = self.K
+        # self.subclustering_net.hood_handle.remove()
+        # gradient_mask_fc2 = torch.zeros(
+        #     2 * self.K, self.subclustering_net.hidden_dim * self.K)
+        # for k in range(self.K):
+        #     gradient_mask_fc2[2 * k:2 * (k + 1), self.subclustering_net.hidden_dim *
+        #                       k:self.subclustering_net.hidden_dim * (k + 1)] = 1
+        # self.subclustering_net.hood_handle = self.subclustering_net.class_fc2.weight.register_hook(
+        #     lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
 
-        return super().on_load_checkpoint(checkpoint)
+        # self.subclustering_net.K = self.K
+        # self.cluster_net.k=self.K
+
+
+        super().on_load_checkpoint(checkpoint)
+
+        # cluster_net_opt = self.optimizers()[
+        #     self.optimizers_dict_idx["cluster_net_opt"]]
+        # cluster_net_opt.state.clear()
+        # cluster_net_opt.param_groups.clear()
+        # cluster_params = torch.nn.ParameterList([
+        #     p for n, p in self.cluster_net.named_parameters()
+        #     if "class_fc2" not in n
+        # ])
+        # cluster_net_opt.add_param_group({"params": cluster_params})
+        # cluster_net_opt.add_param_group(
+        #     {"params": self.cluster_net.class_fc2.parameters()})
+
+        # subclus_opt = self.optimizers()[
+        #     self.optimizers_dict_idx["subcluster_net_opt"]]
+        # subclus_opt.state.clear()
+        # subclus_opt.param_groups.clear()
+        # subclus_opt.add_param_group(
+        #     {"params": self.subclustering_net.parameters()})
