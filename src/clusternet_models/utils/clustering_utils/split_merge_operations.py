@@ -10,7 +10,8 @@ from math import lgamma
 
 from typing import Optional
 
-from kmeans_pytorch import kmeans as GPU_KMeans
+# from kmeans_pytorch import kmeans as GPU_KMeans
+from src.clusternet_models.utils.miscellaneous import GPU_KMeans
 
 from sklearn.neighbors import NearestNeighbors
 from src.clusternet_models.utils.clustering_utils.clustering_operations import (

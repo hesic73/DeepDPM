@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 
 import torch
 from torch import optim, Tensor
+from torch.optim import Optimizer
 import lightning.pytorch as pl
+from lightning.pytorch.core.optimizer import LightningOptimizer
 from sklearn.metrics.cluster import normalized_mutual_info_score
 from sklearn.metrics import adjusted_rand_score, silhouette_score, adjusted_mutual_info_score, homogeneity_completeness_v_measure
 
@@ -29,7 +31,7 @@ from src.clusternet_models.utils.clustering_utils.split_merge_operations import 
 )
 from src.clusternet_models.models.Classifiers import MLP_Classifier, Subclustering_net
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
 from argparse import Namespace
 
@@ -53,12 +55,46 @@ class ClusterNetModel(pl.LightningModule):
         """
 
         super().__init__()
-        self.hparams = hparams
-        self.K:int = init_k
-        self.codes_dim:int = input_dim
-        self.split_performed:bool = False  # indicator to know whether a split was performed
-        self.merge_performed:bool = False
+        self.automatic_optimization = False
 
+        self.K: int = init_k
+        self.codes_dim: int = input_dim
+        # indicator to know whether a split was performed
+        self.split_performed: bool = False
+        self.merge_performed: bool = False
+
+        self.cluster_loss: str = hparams.cluster_loss
+        self.subcluster_loss: str = hparams.subcluster_loss
+        self.cluster_loss_weight: float = hparams.cluster_loss_weight
+        self.subcluster_loss_weight: float = hparams.subcluster_loss_weight
+
+        self.start_sub_clustering: int = hparams.start_sub_clustering
+
+        self.how_to_init_mu: str = hparams.how_to_init_mu
+
+        self.use_priors: bool = hparams.use_priors
+        self.use_labels_for_eval: bool = hparams.use_labels_for_eval
+        self.cov_const = hparams.cov_const
+        self.alpha = hparams.alpha
+        self.split_prob = hparams.split_prob
+        self.raise_merge_proposals = hparams.raise_merge_proposals
+        self.train_cluster_net: int = hparams.train_cluster_net
+        self.log_metrics_at_train: bool = hparams.log_metrics_at_train
+
+        self.evaluate_every_n_epochs: int = hparams.evaluate_every_n_epochs
+
+        self.how_to_init_mu_sub: str = hparams.how_to_init_mu_sub
+        self.split_init_weights_sub: str = hparams.split_init_weights_sub
+
+        self.subcluster_lr: float = hparams.subcluster_lr
+        self.cluster_lr: float = hparams.cluster_lr
+        self.lr_scheduler: str = hparams.lr_scheduler
+
+        self.init_new_weights: str = hparams.init_new_weights
+        self.how_to_init_mu_sub: str = hparams.how_to_init_mu_sub
+        self.merge_init_weights_sub: str = hparams.merge_init_weights_sub
+        
+        self.merge_prob:Optional[float]=hparams.merge_prob
 
         # initialize cluster_net
         self.cluster_net = MLP_Classifier(hparams,
@@ -70,8 +106,8 @@ class ClusterNetModel(pl.LightningModule):
             hparams, codes_dim=self.codes_dim, k=self.K)
 
         self.training_utils = training_utils(hparams)
-        self.prior_sigma_scale:float = self.hparams.prior_sigma_scale
-        self.use_priors = bool(self.hparams.use_priors)
+        self.prior_sigma_scale: float = hparams.prior_sigma_scale
+        self.use_priors = bool(hparams.use_priors)
         self.prior = Priors(
             hparams,
             K=self.K,
@@ -80,12 +116,15 @@ class ClusterNetModel(pl.LightningModule):
         )  # we will use for split and merges even if use_priors is false
 
         self.save_hyperparameters()
+        
+        self.training_step_outputs:List[List[Tensor]] = [[],[]]
+        self.validation_step_outputs:List[Tensor] = []
 
     def forward(self, x):
         return self.cluster_net(x)
 
     def on_train_epoch_start(self):
-        rank_zero_print(f"Epoch {self.current_epoch:3d}")
+        rank_zero_print(f"Epoch {self.current_epoch:3d} starts.")
         # get current training_stage
         self.current_training_stage = (
             "gather_codes" if self.current_epoch == 0
@@ -97,7 +136,6 @@ class ClusterNetModel(pl.LightningModule):
 
     def on_validation_epoch_start(self):
         self.initialize_net_params(stage="val")
-        return super().on_validation_epoch_start()
 
     def initialize_net_params(self, stage: str):
         self.codes = []
@@ -139,26 +177,23 @@ class ClusterNetModel(pl.LightningModule):
         else:
             raise NotImplementedError()
 
-    def training_step(self, batch, batch_idx, optimizer_idx=0):
+    def training_step(self, batch, batch_idx):
         codes, y = batch
         if self.current_training_stage == "gather_codes":
-            return self.only_gather_codes(codes, y, optimizer_idx)
+            return self.only_gather_codes(codes, y)
         elif self.current_training_stage == "train_cluster_net":
-            return self.cluster_net_pretraining(codes, y, optimizer_idx)
+            return self.cluster_net_pretraining(codes, y)
         else:
             raise NotImplementedError()
 
-    def only_gather_codes(self, codes: Tensor, y: Tensor, optimizer_idx: int):
+    def only_gather_codes(self, codes: Tensor, y: Tensor):
         """Only log codes for initialization
 
         Args:
             codes (Tensor): The input data in the latent space
             y (Tensor): The ground truth labels
-            optimizer_idx (int): The optimizer index
         """
-        # log only once
-        if optimizer_idx == self.optimizers_dict_idx["cluster_net_opt"]:
-            self.training_utils.log_codes_and_responses(
+        self.training_utils.log_codes_and_responses(
                 model_codes=self.codes,
                 model_gt=self.train_gt,
                 model_resp=self.train_resp,
@@ -167,10 +202,8 @@ class ClusterNetModel(pl.LightningModule):
                 y=y,
                 logits=None,
             )
-        return None
 
-    def cluster_net_pretraining(self, codes: Tensor, y: Tensor,
-                                optimizer_idx: int):
+    def cluster_net_pretraining(self, codes: Tensor, y: Tensor):
         """Pretraining function for the clustering and subclustering nets.
         At this stage, the only loss is the cluster and subcluster loss.
 
@@ -180,58 +213,67 @@ class ClusterNetModel(pl.LightningModule):
             optimizer_idx (int): The pytorch optimizer index
         """
 
-        if optimizer_idx == self.optimizers_dict_idx["cluster_net_opt"]:
-            codes = codes.view(-1, self.codes_dim)  # (n_batch,codes_dim)
-            logits: Tensor = self.cluster_net(codes)  # (n_batch,K)
-            cluster_loss = self.training_utils.cluster_loss_function(
+        clus_opt:Optimizer = self.optimizers()[
+            self.optimizers_dict_idx["cluster_net_opt"]]
+        clus_shceduler=self.lr_schedulers()
+        sub_clus_opt:Optimizer = self.optimizers()[
+            self.optimizers_dict_idx["subcluster_net_opt"]]
+        
+        
+        codes = codes.view(-1, self.codes_dim)  # (n_batch,codes_dim)
+        logits: Tensor = self.cluster_net(codes)  # (n_batch,K)
+        cluster_loss = self.training_utils.cluster_loss_function(
                 codes,
                 logits,
                 model_mus=self.mus,
                 K=self.K,
                 codes_dim=self.codes_dim,
                 model_covs=self.covs
-                if self.hparams.cluster_loss in ("diag_NIG", "KL_GMM_2") else None,
+                if self.cluster_loss in ("diag_NIG", "KL_GMM_2") else None,
                 pi=self.pi)
 
-            self.log(
+        self.log(
                 "cluster_net_train/train/cluster_loss",
-                self.hparams.cluster_loss_weight * cluster_loss,
+                self.cluster_loss_weight * cluster_loss,
                 on_step=True,
                 on_epoch=False,
             )
-            loss = self.hparams.cluster_loss_weight * cluster_loss
-            sublogits = None
-        elif optimizer_idx == self.optimizers_dict_idx[
-                "subcluster_net_opt"]:
-            codes = codes.view(-1, self.codes_dim)  # (n_batch,codes_dim)
-            with torch.no_grad():
-                logits: Tensor = self.cluster_net(codes)  # (n_batch,K)
-            if self.hparams.start_sub_clustering <= self.current_epoch:
-                sublogits = self.subcluster(codes, logits)
-                subcluster_loss = self.training_utils.subcluster_loss_function_new(
+        loss = self.cluster_loss_weight * cluster_loss
+
+        clus_opt.zero_grad()
+        self.manual_backward(loss)
+        clus_opt.step()
+        clus_shceduler.step()
+        
+        if self.start_sub_clustering <= self.current_epoch:
+            sublogits = self.subcluster(codes, logits.detach())
+            subcluster_loss = self.training_utils.subcluster_loss_function_new(
                     codes,
-                    logits,
+                    logits.detach(),
                     sublogits,
                     self.K,
                     self.mus_sub,
-                    covs_sub=self.covs_sub if self.hparams.subcluster_loss
+                    covs_sub=self.covs_sub if self.subcluster_loss
                     in ("diag_NIG", "KL_GMM_2") else None,
                     pis_sub=self.pi_sub)
-                self.log(
+            self.log(
                     "cluster_net_train/train/subcluster_loss",
-                    self.hparams.subcluster_loss_weight * subcluster_loss,
+                    self.subcluster_loss_weight * subcluster_loss,
                     on_step=True,
                     on_epoch=True,
-                )
-                loss = self.hparams.subcluster_loss_weight * subcluster_loss
-            else:
-                sublogits = None
-                loss = None
+            )
+            loss2 = self.subcluster_loss_weight * subcluster_loss
+            
+            sub_clus_opt.zero_grad()
+            self.manual_backward(loss2)
+            sub_clus_opt.step()
         else:
-            raise NotImplementedError
-        # log data only once
-        if optimizer_idx == len(self.optimizers_dict_idx) - 1:
-            self.training_utils.log_codes_and_responses(
+            sublogits = None
+            loss2 = None
+
+
+
+        self.training_utils.log_codes_and_responses(
                 self.codes,
                 self.train_gt,
                 self.train_resp,
@@ -240,8 +282,11 @@ class ClusterNetModel(pl.LightningModule):
                 logits.detach(),
                 y,
                 sublogits=sublogits,
-            )
+        )
 
+        self.training_step_outputs[0].append(loss.detach().clone().cpu())
+        if loss2 is not None:
+            self.training_step_outputs[1].append(loss2.detach().clone().cpu())
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -260,13 +305,13 @@ class ClusterNetModel(pl.LightningModule):
                 model_mus=self.mus,
                 K=self.K,
                 codes_dim=self.codes_dim,
-                model_covs=self.covs if self.hparams.cluster_loss
+                model_covs=self.covs if self.cluster_loss
                 in ("diag_NIG", "KL_GMM_2") else None,
                 pi=self.pi)
-            loss = self.hparams.cluster_loss_weight * cluster_loss
+            loss = self.cluster_loss_weight * cluster_loss
             self.log("cluster_net_train/val/cluster_loss", loss)
 
-            if self.current_epoch >= self.hparams.start_sub_clustering:
+            if self.current_epoch >= self.start_sub_clustering:
                 subclusters = self.subcluster(codes, logits)
                 subcluster_loss = self.training_utils.subcluster_loss_function_new(
                     codes.view(-1, self.codes_dim),
@@ -274,12 +319,12 @@ class ClusterNetModel(pl.LightningModule):
                     subclusters,
                     self.K,
                     self.mus_sub,
-                    covs_sub=self.covs_sub if self.hparams.subcluster_loss
+                    covs_sub=self.covs_sub if self.subcluster_loss
                     in ("diag_NIG", "KL_GMM_2") else None,
                     pis_sub=self.pi_sub)
                 self.log("cluster_net_train/val/subcluster_loss",
                          subcluster_loss)
-                loss += self.hparams.subcluster_loss_weight * subcluster_loss
+                loss += self.subcluster_loss_weight * subcluster_loss
             else:
                 subclusters = None
         else:
@@ -298,36 +343,36 @@ class ClusterNetModel(pl.LightningModule):
             y=y,
             sublogits=subclusters
         )
+        self.validation_step_outputs.append(loss.detach().clone().cpu())
+        return loss
 
-        return {"loss": loss}
-
-    def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self):
         """Perform logging operations and computes the clusters' and the subclusters' centers.
         Also perform split and merges steps
 
         Args:
             outputs ([type]): [description]
         """
-
+        # rank_zero_print(f"Epoch {self.current_epoch:3d} ends.")
         self.concatenate_net_params(stage='train')
 
         if self.current_training_stage == "gather_codes":
             # first time to compute mus
             self.prior.init_priors(self.codes.view(-1, self.codes_dim))
-           
+
             self.freeze_mus_after_init_until = 0
             self.mus, self.covs, self.pi, init_labels = init_mus_and_covs(
-                    codes=self.codes.view(-1, self.codes_dim),
-                    K=self.K,
-                    how_to_init_mu=self.hparams.how_to_init_mu,
-                    logits=self.train_resp,
-                    use_priors=self.hparams.use_priors,
-                    prior=self.prior,
-                    random_state=0,
-                    device=self.device,
-                )
+                codes=self.codes.view(-1, self.codes_dim),
+                K=self.K,
+                how_to_init_mu=self.how_to_init_mu,
+                logits=self.train_resp,
+                use_priors=self.use_priors,
+                prior=self.prior,
+                random_state=0,
+                device=self.device,
+            )
             rank_zero_print(f"Initial pi:{self.pi.tolist()}")
-            if self.hparams.use_labels_for_eval:
+            if self.use_labels_for_eval:
                 if (self.train_gt < 0).any():
                     # some samples don't have label, e.g., stl10
                     gt = self.train_gt[self.train_gt > -1]
@@ -344,16 +389,18 @@ class ClusterNetModel(pl.LightningModule):
 
         else:
             # add avg loss of all losses
-            clus_losses, subclus_losses = outputs[0], outputs[1]
-
-            avg_clus_loss = torch.stack([x["loss"]
-                                         for x in clus_losses]).mean()
+            clus_losses=self.training_step_outputs[0]
+            subclus_losses=self.training_step_outputs[1]
+            
+            avg_clus_loss = torch.stack(clus_losses).mean()
             self.log("cluster_net_train/train/avg_cluster_loss", avg_clus_loss)
-            if self.current_epoch >= self.hparams.start_sub_clustering:
-                avg_subclus_loss = torch.stack(
-                    [x["loss"] for x in subclus_losses]).mean()
+            if self.current_epoch >= self.start_sub_clustering:
+                avg_subclus_loss = torch.stack(subclus_losses).mean()
                 self.log("cluster_net_train/train/avg_subcluster_loss",
                          avg_subclus_loss)
+                
+            self.training_step_outputs[0].clear()
+            self.training_step_outputs[1].clear()
 
             # Compute mus and perform splits/merges
             perform_split = self.training_utils.should_perform_split(
@@ -362,7 +409,7 @@ class ClusterNetModel(pl.LightningModule):
                 self.current_epoch,
                 self.split_performed)
             # do not compute the mus in the epoch(s) following a split or a merge
-            
+
             freeze_mus = self.training_utils.freeze_mus(
                 self.current_epoch, self.split_performed
             ) or self.current_epoch <= self.freeze_mus_after_init_until
@@ -382,7 +429,7 @@ class ClusterNetModel(pl.LightningModule):
 
                 rank_zero_print(f"pi:{self.pi.tolist()}")
 
-            if (self.hparams.start_sub_clustering == self.current_epoch + 1):
+            if (self.start_sub_clustering == self.current_epoch + 1):
                 # first time to compute sub mus
                 (
                     self.pi_sub,
@@ -396,7 +443,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.prior,
                 )
                 rank_zero_print(f"Initial pi_sub:{self.pi_sub}")
-            elif (self.hparams.start_sub_clustering <= self.current_epoch
+            elif (self.start_sub_clustering <= self.current_epoch
                   and not freeze_mus):
                 # rank_zero_print(f"Shapes:{self.train_resp_sub.shape}")
                 (
@@ -420,8 +467,8 @@ class ClusterNetModel(pl.LightningModule):
                 self.training_utils.last_performed = "split"
                 split_decisions = split_step(
                     self.K, self.codes, self.train_resp, self.train_resp_sub,
-                    self.mus, self.mus_sub, self.hparams.cov_const,
-                    self.hparams.alpha, self.hparams.split_prob, self.prior)
+                    self.mus, self.mus_sub, self.cov_const,
+                    self.alpha, self.split_prob, self.prior)
                 if split_decisions.any():
                     self.split_performed = True
                     self.perform_split_operations(split_decisions)
@@ -436,10 +483,10 @@ class ClusterNetModel(pl.LightningModule):
                     self.train_resp,
                     self.codes,
                     self.K,
-                    self.hparams.raise_merge_proposals,
-                    self.hparams.cov_const,
-                    self.hparams.alpha,
-                    self.hparams.merge_prob,
+                    self.raise_merge_proposals,
+                    self.cov_const,
+                    self.alpha,
+                    self.merge_prob,
                     prior=self.prior,
                 )
                 if len(mus_to_merge) > 0:
@@ -448,30 +495,30 @@ class ClusterNetModel(pl.LightningModule):
                     self.perform_merge(mus_to_merge, highest_ll_mus)
 
             # compute nmi, unique z, etc.
-            if self.hparams.log_metrics_at_train and self.hparams.evaluate_every_n_epochs > 0 and self.current_epoch % self.hparams.evaluate_every_n_epochs == 0:
+            if self.log_metrics_at_train and self.evaluate_every_n_epochs > 0 and self.current_epoch % self.evaluate_every_n_epochs == 0:
                 self.log_clustering_metrics()
 
         if self.split_performed or self.merge_performed:
             self.update_params_split_merge()
             rank_zero_print("Current number of clusters:", self.K)
 
-        self.log("K", self.K)
+        self.log("K", torch.tensor(self.K,dtype=torch.float32))
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         self.concatenate_net_params(stage='val')
         # Take mean of all batch losses
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        avg_loss = torch.stack(self.validation_step_outputs).mean()
         self.log("cluster_net_train/val/avg_val_loss", avg_loss)
-        if self.current_training_stage != "gather_codes" and self.hparams.evaluate_every_n_epochs and self.current_epoch % self.hparams.evaluate_every_n_epochs == 0:
+        if self.current_training_stage != "gather_codes" and self.evaluate_every_n_epochs and self.current_epoch % self.evaluate_every_n_epochs == 0:
             z = self.val_resp.argmax(axis=1).cpu()
             self.log_clustering_metrics(stage="val")
             if not (self.split_performed or self.merge_performed
-                    ) and self.hparams.log_metrics_at_train:
+                    ) and self.log_metrics_at_train:
                 self.log_clustering_metrics(stage="total")
 
-        if self.current_epoch > self.hparams.start_sub_clustering and (
+        if self.current_epoch > self.start_sub_clustering and (
                 self.current_epoch % 50 == 0
-                or self.current_epoch == self.hparams.train_cluster_net - 1):
+                or self.current_epoch == self.train_cluster_net - 1):
             from lightning.pytorch.loggers.logger import DummyLogger
             if not isinstance(self.logger, DummyLogger):
                 self.plot_histograms(train=False, for_thesis=True)
@@ -510,10 +557,12 @@ class ClusterNetModel(pl.LightningModule):
 
         # remove old weights from the optimizer state
         for p in self.subclustering_net.parameters():
-            subclus_opt.state.pop(p)
-
+            try:
+                subclus_opt.state.pop(p)
+            except KeyError:
+                pass
         self.subclustering_net.update_K_split(
-            split_decisions, self.hparams.split_init_weights_sub)
+            split_decisions, self.split_init_weights_sub)
 
         subclus_opt.param_groups[0]["params"] = list(
             self.subclustering_net.parameters())
@@ -527,9 +576,12 @@ class ClusterNetModel(pl.LightningModule):
 
         # remove old weights from the optimizer state
         for p in self.cluster_net.class_fc2.parameters():
-            clus_opt.state.pop(p)
+            try:
+                clus_opt.state.pop(p)
+            except KeyError:
+                pass
         self.cluster_net.update_K_split(split_decisions,
-                                        self.hparams.init_new_weights,
+                                        self.init_new_weights,
                                         self.subclustering_net)
         clus_opt.param_groups[1]["params"] = list(
             self.cluster_net.class_fc2.parameters())
@@ -554,9 +606,9 @@ class ClusterNetModel(pl.LightningModule):
                                            self.codes,
                                            self.train_resp,
                                            self.train_resp_sub,
-                                           self.hparams.how_to_init_mu_sub,
+                                           self.how_to_init_mu_sub,
                                            self.prior,
-                                           use_priors=self.hparams.use_priors)
+                                           use_priors=self.use_priors)
         # update K
         rank_zero_print(
             f"Splitting clusters {np.arange(self.K)[split_decisions.bool().tolist()]}"
@@ -582,7 +634,7 @@ class ClusterNetModel(pl.LightningModule):
             merge_decisions,
             pairs_to_merge=pairs_to_merge,
             highest_ll=highest_ll,
-            init_new_weights=self.hparams.merge_init_weights_sub)
+            init_new_weights=self.merge_init_weights_sub)
         subclus_opt.param_groups[0]["params"] = list(
             self.subclustering_net.parameters())
 
@@ -621,8 +673,8 @@ class ClusterNetModel(pl.LightningModule):
             self.codes,
             self.train_resp,
             self.prior,
-            use_priors=self.hparams.use_priors,
-            how_to_init_mu_sub=self.hparams.how_to_init_mu_sub,
+            use_priors=self.use_priors,
+            how_to_init_mu_sub=self.how_to_init_mu_sub,
         )
         # adjust k
         self.K -= len(highest_ll_mus)
@@ -644,7 +696,7 @@ class ClusterNetModel(pl.LightningModule):
             inds_to_mask,
             mus_lists_to_merge,
             highest_ll_mus,
-            init_new_weights=self.hparams.init_new_weights,
+            init_new_weights=self.init_new_weights,
         )
         # add parameters to the optimizer
         clus_opt.param_groups[1]["params"] = list(
@@ -660,28 +712,30 @@ class ClusterNetModel(pl.LightningModule):
             if "class_fc2" not in n
         ])
         cluster_net_opt = optim.Adam(cluster_params,
-                                     lr=self.hparams.cluster_lr)
+                                     lr=self.cluster_lr)
         # distinct parameter group for the last layer for easy update
         cluster_net_opt.add_param_group(
             {"params": self.cluster_net.class_fc2.parameters()})
         self.optimizers_dict_idx = {"cluster_net_opt": 0}
 
-        if self.hparams.lr_scheduler == "StepLR":
+        if self.lr_scheduler == "StepLR":
             cluster_scheduler = torch.optim.lr_scheduler.StepLR(
                 cluster_net_opt, step_size=20)
-        elif self.hparams.lr_scheduler == "ReduceOnP":
+        elif self.lr_scheduler == "ReduceOnP":
             cluster_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 cluster_net_opt, mode="min", factor=0.5, patience=4)
         else:
             cluster_scheduler = None
 
         sub_clus_opt = optim.Adam(self.subclustering_net.parameters(),
-                                  lr=self.hparams.subcluster_lr)
+                                  lr=self.subcluster_lr)
         self.optimizers_dict_idx["subcluster_net_opt"] = 1
         return ({
                 "optimizer": cluster_net_opt,
+                "lr_scheduler": {
                 "scheduler": cluster_scheduler,
                 "monitor": "cluster_net_train/val/cluster_loss"
+            }  
                 }, {
                 "optimizer": sub_clus_opt,
                 })
@@ -755,13 +809,13 @@ class ClusterNetModel(pl.LightningModule):
 
         pi_sub = (self.pi_sub_new if self.split_performed
                   or self.merge_performed else self.pi_sub if
-                  self.hparams.start_sub_clustering <= self.current_epoch
+                  self.start_sub_clustering <= self.current_epoch
                   else None)
 
         fig = PlotUtils.plot_weights_histograms(
             K=self.K,
             pi=pi,
-            start_sub_clustering=self.hparams.start_sub_clustering,
+            start_sub_clustering=self.start_sub_clustering,
             current_epoch=self.current_epoch,
             pi_sub=pi_sub,
             for_thesis=for_thesis)
@@ -820,18 +874,18 @@ class ClusterNetModel(pl.LightningModule):
                  on_epoch=True,
                  on_step=False)
         self.log(f"cluster_net_train/{stage}/unique_z",
-                 unique_z,
+                 torch.tensor(unique_z,dtype=torch.float32),
                  on_epoch=True,
                  on_step=False)
 
-        if (self.hparams.log_metrics_at_train and stage == "train") or \
-                (not self.hparams.log_metrics_at_train and stage != "train"):
+        if (self.log_metrics_at_train and stage == "train") or \
+                (not self.log_metrics_at_train and stage != "train"):
             rank_zero_print(
                 f"NMI : {gt_nmi}, ARI: {ari}, ACC: {acc}, current K: {unique_z}"
             )
 
-        if self.current_epoch in (0, 1, self.hparams.train_cluster_net - 1):
-            alt_stage = "start" if self.current_epoch == 1 or self.hparams.train_cluster_net % self.current_epoch == 0 else "end"
+        if self.current_epoch in (0, 1, self.train_cluster_net - 1):
+            alt_stage = "start" if self.current_epoch == 1 or self.train_cluster_net % self.current_epoch == 0 else "end"
 
             if unique_z > 1:
                 try:
@@ -930,41 +984,7 @@ class ClusterNetModel(pl.LightningModule):
         for attr in attributes:
             if attr in checkpoint.keys():
                 self.__setattr__(attr, checkpoint[attr])
-        
-
-        # there seems to be some subtle differences between passing init_k=k and manually reinitializing everything here
-        # and trainer still throws a runtimeerror when accelerator=ddp
-
-        # self.subclustering_net.hood_handle.remove()
-        # gradient_mask_fc2 = torch.zeros(
-        #     2 * self.K, self.subclustering_net.hidden_dim * self.K)
-        # for k in range(self.K):
-        #     gradient_mask_fc2[2 * k:2 * (k + 1), self.subclustering_net.hidden_dim *
-        #                       k:self.subclustering_net.hidden_dim * (k + 1)] = 1
-        # self.subclustering_net.hood_handle = self.subclustering_net.class_fc2.weight.register_hook(
-        #     lambda grad: grad.mul_(gradient_mask_fc2.to(device=self.device)))
-
-        # self.subclustering_net.K = self.K
-        # self.cluster_net.k=self.K
-
 
         super().on_load_checkpoint(checkpoint)
 
-        # cluster_net_opt = self.optimizers()[
-        #     self.optimizers_dict_idx["cluster_net_opt"]]
-        # cluster_net_opt.state.clear()
-        # cluster_net_opt.param_groups.clear()
-        # cluster_params = torch.nn.ParameterList([
-        #     p for n, p in self.cluster_net.named_parameters()
-        #     if "class_fc2" not in n
-        # ])
-        # cluster_net_opt.add_param_group({"params": cluster_params})
-        # cluster_net_opt.add_param_group(
-        #     {"params": self.cluster_net.class_fc2.parameters()})
-
-        # subclus_opt = self.optimizers()[
-        #     self.optimizers_dict_idx["subcluster_net_opt"]]
-        # subclus_opt.state.clear()
-        # subclus_opt.param_groups.clear()
-        # subclus_opt.add_param_group(
-        #     {"params": self.subclustering_net.parameters()})
+       

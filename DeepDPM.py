@@ -10,7 +10,7 @@ from argparse import ArgumentParser, Namespace
 import os
 from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
 import lightning.pytorch as pl
-from lightning.pytorch.utilities import seed
+from lightning.fabric.utilities import seed
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from sklearn.metrics import adjusted_rand_score as ARI
 import numpy as np
@@ -63,7 +63,7 @@ def parse_minimal_args(parser):
     parser.add_argument("--use_labels_for_eval",
                         action="store_true",
                         help="whether to use labels for evaluation")
-    parser.add_argument("--gpus", default=None)
+    parser.add_argument("--gpus", nargs='*', type=int, default=None)
 
     # added arguments
     parser.add_argument("--project",
@@ -168,23 +168,20 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--split_prob",
         type=float,
         default=None,
-        help=
-        "Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
+        help="Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
     )
     parser.add_argument(
         "--merge_prob",
         type=float,
         default=None,
-        help=
-        "merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
+        help="merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
     )
     parser.add_argument(
         "--init_new_weights",
         type=str,
         default="same",
         choices=["same", "random", "subclusters"],
-        help=
-        "How to create new weights after split. Same duplicates the old cluster's weights to the two new ones, random generate random weights and subclusters copies the weights from the subclustering net",
+        help="How to create new weights after split. Same duplicates the old cluster's weights to the two new ones, random generate random weights and subclusters copies the weights from the subclustering net",
     )
     parser.add_argument(
         "--start_merging",
@@ -196,23 +193,20 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--merge_init_weights_sub",
         type=str,
         default="highest_ll",
-        help=
-        "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
+        help="How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
     )
     parser.add_argument(
         "--split_init_weights_sub",
         type=str,
         default="random",
         choices=["same_w_noise", "same", "random"],
-        help=
-        "How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
+        help="How to initialize the weights of the subclusters of the merged clusters. Defaults to same",
     )
     parser.add_argument(
         "--split_merge_every_n_epochs",
         type=int,
         default=30,
-        help=
-        "Example: if set to 10, split proposals will be made every 10 epochs",
+        help="Example: if set to 10, split proposals will be made every 10 epochs",
     )
     parser.add_argument(
         "--raise_merge_proposals",
@@ -230,15 +224,13 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--freeze_mus_submus_after_splitmerge",
         type=int,
         default=5,
-        help=
-        "Numbers of epochs to freeze the mus and sub mus following a split or a merge step",
+        help="Numbers of epochs to freeze the mus and sub mus following a split or a merge step",
     )
     parser.add_argument(
         "--freeze_mus_after_init",
         type=int,
         default=5,
-        help=
-        "Numbers of epochs to freeze the mus and sub mus following a new initialization",
+        help="Numbers of epochs to freeze the mus and sub mus following a new initialization",
     )
     parser.add_argument(
         "--use_priors",
@@ -356,7 +348,7 @@ def get_checkpoint_callback(args: Namespace):
         from lightning.pytorch.callbacks import ModelCheckpoint
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"./saved_models/{args.dataset}/{args.exp_name}",
-            period=10)
+            every_n_epochs=10)
         if not os.path.exists(f'./saved_models/{args.dataset}'):
             os.makedirs(f'./saved_models/{args.dataset}')
         if not os.path.exists(
@@ -381,7 +373,6 @@ def get_args() -> Namespace:
 def train_cluster_net():
 
     args = get_args()
-
     dataset_obj = GMM_dataset(
         args) if args.dataset == "synthetic" else CustomDataset(args)
 
@@ -397,26 +388,24 @@ def train_cluster_net():
 
     seed.seed_everything(args.seed)
 
-
-    resume_path=need_resume(f"./saved_models/{args.dataset}/{args.exp_name}")
+    resume_path = need_resume(f"./saved_models/{args.dataset}/{args.exp_name}")
     if resume_path is not None:
-        ckpt=torch.load(resume_path,map_location=torch.device('cpu'))
+        ckpt = torch.load(resume_path, map_location=torch.device('cpu'))
         # make things easier
-        args.init_k=ckpt['K']
+        args.init_k = ckpt['K']
         print(f"override init_k to {args.init_k}")
 
     model = ClusterNetModel(hparams=args,
                             input_dim=dataset_obj.data_dim,
                             init_k=args.init_k)
-
     # if accelerator=ddp, loading from checkpoint has a weird bug on which I have no ideas
     trainer = pl.Trainer(logger=logger,
                          max_epochs=args.max_epochs,
                          devices=args.gpus,
                          num_sanity_val_steps=0,
                          callbacks=get_checkpoint_callback(args),
-                         enable_progress_bar=True)
-    trainer.fit(model, train_loader, val_loader,ckpt_path=resume_path)
+                         enable_progress_bar=False)
+    trainer.fit(model, train_loader, val_loader, ckpt_path=resume_path)
 
     print("Finished training!")
     # evaluate last model

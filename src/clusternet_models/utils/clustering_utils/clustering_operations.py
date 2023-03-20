@@ -6,7 +6,8 @@
 
 import torch
 from torch import Tensor
-from kmeans_pytorch import kmeans as GPU_KMeans
+# from kmeans_pytorch import kmeans as GPU_KMeans
+from src.clusternet_models.utils.miscellaneous import GPU_KMeans
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from src.clusternet_models.utils.clustering_utils.priors import Priors
