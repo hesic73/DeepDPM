@@ -17,7 +17,7 @@ from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     _create_subclusters, compute_data_covs_soft_assignment,
     init_mus_and_covs_sub, comp_subclusters_params_min_dist)
 
-from pytorch_lightning.utilities.distributed import rank_zero_only
+from lightning.pytorch.utilities.rank_zero import rank_zero_only
 
 rank_zero_print = rank_zero_only(print)
 

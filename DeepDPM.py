@@ -8,9 +8,9 @@ import wandb
 import argparse
 from argparse import ArgumentParser, Namespace
 import os
-from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
-import pytorch_lightning as pl
-from pytorch_lightning.utilities import seed
+from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
+import lightning.pytorch as pl
+from lightning.pytorch.utilities import seed
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from sklearn.metrics import adjusted_rand_score as ARI
 import numpy as np
@@ -286,10 +286,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         type=float,
         default=".005",
     )
-    parser.add_argument("--prior_sigma_scale_step",
-                        type=float,
-                        default=1.,
-                        help="add to change sigma scale between alternations")
     parser.add_argument(
         "--compute_params_every",
         type=int,
@@ -357,7 +353,7 @@ def need_resume(checkpoint_dir: str) -> Optional[str]:
 
 def get_checkpoint_callback(args: Namespace):
     if args.save_checkpoints:
-        from pytorch_lightning.callbacks import ModelCheckpoint
+        from lightning.pytorch.callbacks import ModelCheckpoint
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"./saved_models/{args.dataset}/{args.exp_name}",
             period=10)
@@ -367,7 +363,7 @@ def get_checkpoint_callback(args: Namespace):
                 f'./saved_models/{args.dataset}/{args.exp_name}'):
             os.makedirs(f'./saved_models/{args.dataset}/{args.exp_name}')
     else:
-        checkpoint_callback = False
+        checkpoint_callback = None
 
     return checkpoint_callback
 
@@ -414,15 +410,13 @@ def train_cluster_net():
                             init_k=args.init_k)
 
     # if accelerator=ddp, loading from checkpoint has a weird bug on which I have no ideas
-    trainer = pl.Trainer(accelerator='ddp',
-                         logger=logger,
+    trainer = pl.Trainer(logger=logger,
                          max_epochs=args.max_epochs,
-                         gpus=args.gpus,
+                         devices=args.gpus,
                          num_sanity_val_steps=0,
-                         checkpoint_callback=get_checkpoint_callback(args),
-                         resume_from_checkpoint=resume_path,
-                         progress_bar_refresh_rate=0)
-    trainer.fit(model, train_loader, val_loader)
+                         callbacks=get_checkpoint_callback(args),
+                         enable_progress_bar=True)
+    trainer.fit(model, train_loader, val_loader,ckpt_path=resume_path)
 
     print("Finished training!")
     # evaluate last model
