@@ -30,13 +30,14 @@ def init_mus_and_covs(codes,
         how_to_init_mu (str): A string defining how to initialize the centers.
         use_priors (bool, optional): Whether to consider the priors. Defaults to True.
     """
-    print("Initializing clusters params using Kmeans...")
+
+    
     if codes.shape[0] > 2 * (10**5):
         # sample only a portion of the codes
         codes = codes[:2 * (10**5)]
     if how_to_init_mu == "kmeans":
         if K == 1:
-            kmeans = KMeans(n_clusters=K, random_state=random_state).fit(
+            kmeans = KMeans(n_clusters=K, random_state=random_state,n_init=10).fit(
                 codes.detach().cpu())
             labels = torch.from_numpy(kmeans.labels_)
             kmeans_mus = torch.from_numpy(kmeans.cluster_centers_)

@@ -210,7 +210,6 @@ class ClusterNetModel(pl.LightningModule):
         Args:
             codes (Tensor): The encoded data samples (n_batch,codes_dim)
             y (Tensor): The ground truth labels (n_batch,)
-            optimizer_idx (int): The pytorch optimizer index
         """
 
         clus_opt:Optimizer = self.optimizers()[
@@ -218,8 +217,8 @@ class ClusterNetModel(pl.LightningModule):
         clus_shceduler=self.lr_schedulers()
         sub_clus_opt:Optimizer = self.optimizers()[
             self.optimizers_dict_idx["subcluster_net_opt"]]
-        
-        
+        # if self.trainer.is_last_batch:
+        #     rank_zero_print(clus_shceduler.get_last_lr())
         codes = codes.view(-1, self.codes_dim)  # (n_batch,codes_dim)
         logits: Tensor = self.cluster_net(codes)  # (n_batch,K)
         cluster_loss = self.training_utils.cluster_loss_function(
@@ -243,13 +242,16 @@ class ClusterNetModel(pl.LightningModule):
         clus_opt.zero_grad()
         self.manual_backward(loss)
         clus_opt.step()
-        clus_shceduler.step()
+        
+        if self.trainer.is_last_batch:
+            clus_shceduler.step()
         
         if self.start_sub_clustering <= self.current_epoch:
-            sublogits = self.subcluster(codes, logits.detach())
+            logits=logits.detach()
+            sublogits = self.subcluster(codes, logits)
             subcluster_loss = self.training_utils.subcluster_loss_function_new(
                     codes,
-                    logits.detach(),
+                    logits,
                     sublogits,
                     self.K,
                     self.mus_sub,
@@ -422,7 +424,6 @@ class ClusterNetModel(pl.LightningModule):
                 ) = self.training_utils.comp_cluster_params(
                     self.train_resp,
                     self.codes.view(-1, self.codes_dim),
-                    self.pi,
                     self.K,
                     self.prior,
                 )
@@ -557,10 +558,8 @@ class ClusterNetModel(pl.LightningModule):
 
         # remove old weights from the optimizer state
         for p in self.subclustering_net.parameters():
-            try:
-                subclus_opt.state.pop(p)
-            except KeyError:
-                pass
+            subclus_opt.state.pop(p)
+    
         self.subclustering_net.update_K_split(
             split_decisions, self.split_init_weights_sub)
 
@@ -576,10 +575,7 @@ class ClusterNetModel(pl.LightningModule):
 
         # remove old weights from the optimizer state
         for p in self.cluster_net.class_fc2.parameters():
-            try:
-                clus_opt.state.pop(p)
-            except KeyError:
-                pass
+            clus_opt.state.pop(p)
         self.cluster_net.update_K_split(split_decisions,
                                         self.init_new_weights,
                                         self.subclustering_net)
@@ -711,6 +707,9 @@ class ClusterNetModel(pl.LightningModule):
             p for n, p in self.cluster_net.named_parameters()
             if "class_fc2" not in n
         ])
+        print("====cluster parameters")
+        print([n for n, p in self.cluster_net.named_parameters() if "class_fc2" not in n])
+        print([n for n, p in self.cluster_net.class_fc2.named_parameters()])
         cluster_net_opt = optim.Adam(cluster_params,
                                      lr=self.cluster_lr)
         # distinct parameter group for the last layer for easy update
@@ -720,10 +719,12 @@ class ClusterNetModel(pl.LightningModule):
 
         if self.lr_scheduler == "StepLR":
             cluster_scheduler = torch.optim.lr_scheduler.StepLR(
-                cluster_net_opt, step_size=20)
+                cluster_net_opt, step_size=20,gamma=0.95)
         elif self.lr_scheduler == "ReduceOnP":
             cluster_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 cluster_net_opt, mode="min", factor=0.5, patience=4)
+        elif self.lr_scheduler == "CosineAnnealingLR":
+            cluster_scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(cluster_net_opt,T_max=self.trainer.max_epochs,eta_min=self.cluster_lr/10)
         else:
             cluster_scheduler = None
 

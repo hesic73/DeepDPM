@@ -58,7 +58,7 @@ class Priors:
     def get_sum_counts(self):
         return self.pi_prior.get_sum_counts()
 
-    def init_priors(self, codes):
+    def init_priors(self, codes:Tensor):
         return self.mus_covs_prior.init_priors(codes)
 
     def compute_params_post(self, codes_k, mu_k):
@@ -156,7 +156,7 @@ class NIW_prior:
         self.niw_kappa: float = hparams.prior_kappa
         self.niw_nu: float = hparams.NIW_prior_nu
 
-    def init_priors(self, codes):
+    def init_priors(self, codes:Tensor):
         if self.prior_mu_0_choice == "data_mean":
             self.niw_m = codes.mean(axis=0)
         if self.prior_sigma_choice == "isotropic":

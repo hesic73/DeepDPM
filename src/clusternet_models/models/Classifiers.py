@@ -309,8 +309,7 @@ class Subclustering_net(nn.Module):
                     weights = self._initalize_weights_split(weights,
                                                             init_new_weights,
                                                             num=1)
-                
-                print(self.class_fc2.weight.shape)
+                    
                 self.class_fc2.weight.data[2 * i:2 * (i + 1), self.hidden_dim *
                                            i:self.hidden_dim *
                                            (i + 1)] = weights

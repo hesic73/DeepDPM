@@ -67,7 +67,7 @@ class training_utils:
             ]).any()
             return split_occured or merge_occured
 
-    def comp_cluster_params(self, train_resp:Tensor, codes:Tensor, pi:Tensor, K:int, prior:Optional[Priors]=None):
+    def comp_cluster_params(self, train_resp:Tensor, codes:Tensor, K:int, prior:Optional[Priors]=None):
         """compute cluster parameters
 
         Args:

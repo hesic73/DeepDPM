@@ -30,6 +30,8 @@ logging.getLogger("lightning").setLevel(logging.INFO)
 def get_dataset_directory(dataset_name: str) -> str:
     if dataset_name == 'CNG':
         return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/cng_features"
+    elif dataset_name=='tomo':
+        return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/tomo_features"
     else:
         raise NotImplementedError
 
@@ -133,7 +135,7 @@ def run_on_embeddings_hyperparams(parent_parser):
     parser.add_argument("--lr_scheduler",
                         type=str,
                         default="StepLR",
-                        choices=["StepLR", "None", "ReduceOnP"])
+                        choices=["StepLR", "None", "ReduceOnP","CosineAnnealingLR"])
     parser.add_argument(
         "--start_sub_clustering",
         type=int,

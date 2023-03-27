@@ -21,10 +21,10 @@ def GPU_KMeans(X: Tensor,
     Returns:
         Tuple[Tensor, Tensor]: labels (n,) ; kmeans_mus (num_clusters,codes_dim)
     """
-    
-    X=X.cpu()
+
+    X = X.cpu()
     # assert torch.device(device) == torch.device('cpu')
-    kmeans = KMeans(n_clusters=num_clusters, random_state=0).fit(X)
+    kmeans = KMeans(n_clusters=num_clusters, random_state=0, n_init=10).fit(X)
     labels = torch.from_numpy(kmeans.labels_)
     kmeans_mus = torch.from_numpy(kmeans.cluster_centers_)
 

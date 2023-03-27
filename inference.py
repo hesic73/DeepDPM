@@ -6,35 +6,36 @@ from src.datasets import CustomDataset
 from tqdm import tqdm
 import numpy as np
 
-checkpoint_path = "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/DeepDPM/saved_models/CNG/init_k_5/epoch=499-step=39499.ckpt"
-data_dim = 128
+checkpoint_path = "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/DeepDPM/saved_models/tomo/baseline/epoch=499-step=63918.ckpt"
+data_dim = 32
 cp_state = torch.load(checkpoint_path)
 K = cp_state['state_dict']['cluster_net.class_fc2.weight'].shape[0]
-hyper_param = cp_state['hyper_parameters']
+hyper_param = cp_state['hyper_parameters']['hparams']
 
-args = Namespace()
-for key, value in hyper_param.items():
-    setattr(args, key, value)
 
-args.batch_size = 512
+hyper_param.batch_size = 512
 
 model = ClusterNetModel.load_from_checkpoint(checkpoint_path,
                                              input_dim=data_dim,
                                              init_k=K,
-                                             hparams=args)
+                                             hparams=hyper_param)
 
 
 model.eval()
 model.cuda()
-dataset_obj = CustomDataset(args)
-train_loader = DataLoader(dataset_obj.get_train_data(), batch_size=args.batch_size,
-                          shuffle=False,
-                          num_workers=args.num_workers,)
+dataset_obj = CustomDataset(hyper_param)
+train_loader = DataLoader(
+    dataset_obj.get_train_data(),
+    batch_size=hyper_param.batch_size,
+    shuffle=False,
+    num_workers=hyper_param.num_workers,
+)
 cluster_assignments = []
-for data, label in tqdm(train_loader):
-    soft_assign = model(data.cuda())
-    hard_assign = soft_assign.argmax(-1)
-    cluster_assignments.append(hard_assign.cpu())
+with torch.no_grad():
+    for data, label in tqdm(train_loader):
+        soft_assign = model(data.cuda())
+        hard_assign = soft_assign.argmax(-1)
+        cluster_assignments.append(hard_assign.cpu())
 
 cluster_assignments = torch.concat(cluster_assignments)
 
@@ -48,5 +49,5 @@ clusters = {}
 for id in unique_ids:
     tmp = torch.where(cluster_assignments == id)[0]
     clusters[id] = tmp
-    
-np.save("results/clusters.npy",clusters)
+
+np.save("results/tomo_clusters.npy",clusters)
