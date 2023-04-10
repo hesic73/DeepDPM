@@ -1,10 +1,11 @@
 #!/bin/bash
 
-PROJECT=DeepDPM_tomo
+PROJECT=DeepDPM_proteasome
 EXP_NAME=baseline
-DATASET=tomo
+DATASET=proteasome-12
 
 MINIMAL_ARGS="--dataset "$DATASET" \
+--use_labels_for_eval \
 --seed 12345 \
 --project "$PROJECT" \
 --exp_name "$EXP_NAME" \

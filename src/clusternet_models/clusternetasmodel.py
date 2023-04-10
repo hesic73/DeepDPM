@@ -882,7 +882,7 @@ class ClusterNetModel(pl.LightningModule):
         if (self.log_metrics_at_train and stage == "train") or \
                 (not self.log_metrics_at_train and stage != "train"):
             rank_zero_print(
-                f"NMI : {gt_nmi}, ARI: {ari}, ACC: {acc}, current K: {unique_z}"
+                f"NMI : {gt_nmi}, ARI: {ari}, ACC: {acc}, ACC-5 {acc_top5}, current K: {unique_z}"
             )
 
         if self.current_epoch in (0, 1, self.train_cluster_net - 1):

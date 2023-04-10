@@ -398,7 +398,7 @@ class CustomDataset(MyDataset):
                                                train_codes)
         if self.args.use_labels_for_eval:
             train_labels = torch.load(
-                os.path.join(self.data_dir, "train_labels.pt"))
+                os.path.join(self.data_dir, "train_labels.pt")).reshape(-1)
         else:
             train_labels = torch.zeros((train_codes.size()[0]))
         self._data_dim = train_codes.size()[1]

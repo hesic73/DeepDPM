@@ -108,7 +108,7 @@ def NIW_log_marginal_likelihood(D: int, N_k: int, nu: float, nu_star: float, psi
         (nu / 2.0) * torch.logdet(psi) -
         (nu_star / 2.0) * torch.logdet(psi_star) + (D / 2.0) *
         torch.log(torch.tensor(kappa/kappa_star)) +
-        (D / 2.0) * (nu * torch.log(torch.tensor(nu)) -
+        (D/16 / 2.0) * (nu * torch.log(torch.tensor(nu)) -
                      nu_star * torch.log(torch.tensor(nu_star)))
     )
 

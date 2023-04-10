@@ -32,6 +32,8 @@ def get_dataset_directory(dataset_name: str) -> str:
         return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/cng_features"
     elif dataset_name=='tomo':
         return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/tomo_features"
+    elif dataset_name=='proteasome-12':
+        return "/Share/UserHome/tzhao/2023/sicheng/GraduationDesign/data/proteasome12_features"
     else:
         raise NotImplementedError
 
