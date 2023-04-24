@@ -18,6 +18,13 @@ from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     compute_mus_covs_pis_subclusters)
 
 from src.clusternet_models.utils.clustering_utils.priors import Priors
+from typing import Tuple
+from src.clusternet_models.utils.miscellaneous import GPU_KMeans
+import torch.nn.functional as F
+
+
+def split_cluster(cluster: Tensor, indices: Tensor) -> Tuple[Tensor, Tensor]:
+    pass
 
 
 class training_utils:
@@ -342,3 +349,54 @@ class training_utils:
             model_resp.append(logits.detach().cpu())
         if sublogits is not None:
             model_resp_sub.append(sublogits.detach().cpu())
+
+    def custom_comp_subcluster_params(
+        self,
+        logits: Tensor,
+        codes: Tensor,
+        K: int,
+    ):
+        """初始化subcluster需要的参数
+
+        Args:
+            logits (Tensor): (n,k) cluster_net的输出
+            codes (Tensor): (n,codes_dim) 数据的特征表示
+            K (int): 类数
+
+        Raises:
+            NotImplementedError: how_to_init_mu_sub 支持有限
+
+        Returns:
+            (Tensor,Tensor): 分类均值和分类结果，分类结果采用one-hot编码 logits_sub[2k+i]==1
+            说明该样本在第k类分入subcluster i
+        """
+        mus_sub = []
+        labels_sub = torch.empty((len(logits),),dtype=torch.int64)  # (n,)
+
+        for k in range(K):
+            indices_k = logits.argmax(-1) == k  # (n,) bool
+            codes_k = codes[indices_k]
+            if len(codes_k) <= 2:
+                raise RuntimeError(f"len(codes_{k}) <= 2")
+
+            if self.hparams.how_to_init_mu_sub == "kmeans":
+                # labels (n_k,)
+
+                labels, cluster_centers = GPU_KMeans(X=codes_k.detach(),
+                                                     num_clusters=2,
+                                                     device=torch.device(
+                                                         self.device),
+                                                     tqdm_flag=False)
+            else:
+                raise NotImplementedError("invalid how_to_init_mu_sub")
+
+            mus_sub.append(cluster_centers)
+
+            labels = labels + 2*k
+            index_k=torch.arange(0,len(logits))[indices_k]
+            labels=labels.type(torch.int64)
+            labels_sub.scatter_(dim=0, index=index_k, src=labels)
+
+        mus_sub = torch.cat(mus_sub)
+        logits_sub = F.one_hot(labels_sub, num_classes=2*K)
+        return mus_sub, logits_sub

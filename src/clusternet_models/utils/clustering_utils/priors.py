@@ -49,7 +49,7 @@ class Priors:
         else:
             return counts
 
-    def comp_post_pi(self, pi:Tensor)->Tensor:
+    def comp_post_pi(self, pi: Tensor) -> Tensor:
         if self.pi_prior:
             return self.pi_prior.comp_post_pi(pi, self.pi_counts)
         else:
@@ -58,13 +58,13 @@ class Priors:
     def get_sum_counts(self):
         return self.pi_prior.get_sum_counts()
 
-    def init_priors(self, codes:Tensor):
+    def init_priors(self, codes: Tensor):
         return self.mus_covs_prior.init_priors(codes)
 
     def compute_params_post(self, codes_k, mu_k):
         return self.mus_covs_prior.compute_params_post(codes_k, mu_k)
 
-    def compute_post_mus(self, N_ks:Tensor, data_mus:Tensor)->Tensor:
+    def compute_post_mus(self, N_ks: Tensor, data_mus: Tensor) -> Tensor:
         return self.mus_covs_prior.compute_post_mus(N_ks, data_mus)
 
     def compute_post_cov(self, N_k, mu_k, data_cov_k):
@@ -88,7 +88,7 @@ class Dirichlet_prior:
             counts = self.counts
         return counts + self.p_counts
 
-    def comp_post_pi(self, pi:Tensor, counts:Optional[float]=None)->Tensor:
+    def comp_post_pi(self, pi: Tensor, counts: Optional[float] = None) -> Tensor:
         if counts is None:
             # counts = 0.001
             counts = 0.1
@@ -108,8 +108,8 @@ def NIW_log_marginal_likelihood(D: int, N_k: int, nu: float, nu_star: float, psi
         (nu / 2.0) * torch.logdet(psi) -
         (nu_star / 2.0) * torch.logdet(psi_star) + (D / 2.0) *
         torch.log(torch.tensor(kappa/kappa_star)) +
-        (D/16 / 2.0) * (nu * torch.log(torch.tensor(nu)) -
-                     nu_star * torch.log(torch.tensor(nu_star)))
+        (D/2 / 2.0) * (nu * torch.log(torch.tensor(nu)) -
+                       nu_star * torch.log(torch.tensor(nu_star)))
     )
 
 
@@ -156,7 +156,7 @@ class NIW_prior:
         self.niw_kappa: float = hparams.prior_kappa
         self.niw_nu: float = hparams.NIW_prior_nu
 
-    def init_priors(self, codes:Tensor):
+    def init_priors(self, codes: Tensor):
         if self.prior_mu_0_choice == "data_mean":
             self.niw_m = codes.mean(axis=0)
         if self.prior_sigma_choice == "isotropic":

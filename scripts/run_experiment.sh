@@ -21,6 +21,7 @@ EXPERIMENT_ARGS=" --init_k 1 \
 --clusternet_hidden_layer_list 64 128 64 \
 --start_computing_params 25 \
 --how_to_compute_mu kmeans \
+--how_to_init_mu_sub kmeans \
 --start_sub_clustering 45 \
 --start_splitting 55 \
 --start_merging 55 \

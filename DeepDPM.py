@@ -119,6 +119,12 @@ def run_on_embeddings_hyperparams(parent_parser):
         default="kmeans",
     )
     parser.add_argument(
+        "--how_to_init_mu_sub",
+        type=str,
+        choices=["kmeans", "soft_assign", "kmeans_1d"],
+        default="kmeans_1d",
+    )
+    parser.add_argument(
         "--cluster_lr",
         type=float,
         default=0.0005,

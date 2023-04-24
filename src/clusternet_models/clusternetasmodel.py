@@ -69,6 +69,7 @@ class ClusterNetModel(pl.LightningModule):
         self.start_sub_clustering: int = hparams.start_sub_clustering
 
         self.how_to_init_mu: str = hparams.how_to_init_mu
+        self.how_to_init_mu_sub: str = hparams.how_to_init_mu_sub
 
         self.use_priors: bool = hparams.use_priors
         self.use_labels_for_eval: bool = hparams.use_labels_for_eval
@@ -356,7 +357,7 @@ class ClusterNetModel(pl.LightningModule):
         else:
             # add avg loss of all losses
             clus_losses=self.training_step_outputs[0]
-            subclus_losses=self.training_step_outputs[1]
+
             
             avg_clus_loss = torch.stack(clus_losses).mean()
             self.log("cluster_net_train/train/avg_cluster_loss", avg_clus_loss)
@@ -364,7 +365,7 @@ class ClusterNetModel(pl.LightningModule):
                 pass
                 
             self.training_step_outputs[0].clear()
-            self.training_step_outputs[1].clear()
+
 
             # Compute mus and perform splits/merges
             perform_split = self.training_utils.should_perform_split(
@@ -391,6 +392,16 @@ class ClusterNetModel(pl.LightningModule):
                 )
 
                 rank_zero_print(f"pi:{self.pi.tolist()}")
+                
+            if (self.start_sub_clustering == self.current_epoch + 1):
+                (self.mus_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
+                    self.K,)
+                rank_zero_print(f"Initial pi_sub:{self.pi_sub}")
+            elif (self.start_sub_clustering <= self.current_epoch
+                  and not freeze_mus):
+                (self.mus_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
+                    self.K,)
+                rank_zero_print(f"pi_sub:{self.pi_sub}")
 
             if perform_split and not freeze_mus:
                 rank_zero_print("perform splits")
