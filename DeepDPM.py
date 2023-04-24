@@ -119,20 +119,9 @@ def run_on_embeddings_hyperparams(parent_parser):
         default="kmeans",
     )
     parser.add_argument(
-        "--how_to_init_mu_sub",
-        type=str,
-        choices=["kmeans", "soft_assign", "kmeans_1d"],
-        default="kmeans_1d",
-    )
-    parser.add_argument(
         "--cluster_lr",
         type=float,
         default=0.0005,
-    )
-    parser.add_argument(
-        "--subcluster_lr",
-        type=float,
-        default=0.005,
     )
     parser.add_argument("--lr_scheduler",
                         type=str,
@@ -142,11 +131,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--start_sub_clustering",
         type=int,
         default=45,
-    )
-    parser.add_argument(
-        "--subcluster_loss_weight",
-        type=float,
-        default=1.0,
     )
     parser.add_argument(
         "--start_splitting",
@@ -162,23 +146,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         "--softmax_norm",
         type=float,
         default=1,
-    )
-    parser.add_argument(
-        "--subcluster_softmax_norm",
-        type=float,
-        default=1,
-    )
-    parser.add_argument(
-        "--split_prob",
-        type=float,
-        default=None,
-        help="Split with this probability even if split rule is not met.  If set to None then the probability that will be used is min(1,H).",
-    )
-    parser.add_argument(
-        "--merge_prob",
-        type=float,
-        default=None,
-        help="merge with this probability even if merge rule is not met. If set to None then the probability that will be used is min(1,H).",
     )
     parser.add_argument(
         "--init_new_weights",
@@ -301,13 +268,6 @@ def run_on_embeddings_hyperparams(parent_parser):
         default="KL_GMM_2",
         choices=["diag_NIG", "isotropic", "KL_GMM_2"],
     )
-    parser.add_argument(
-        "--subcluster_loss",
-        type=str,
-        help="What kind og loss to use",
-        default="isotropic",
-        choices=["diag_NIG", "isotropic", "KL_GMM_2"],
-    )
 
     parser.add_argument(
         "--log_metrics_at_train",
@@ -351,13 +311,13 @@ def get_checkpoint_callback(args: Namespace):
     if args.save_checkpoints:
         from lightning.pytorch.callbacks import ModelCheckpoint
         checkpoint_callback = ModelCheckpoint(
-            dirpath=f"./saved_models/{args.dataset}/{args.exp_name}",
+            dirpath=f"./subcluster_saved_models/{args.dataset}/{args.exp_name}",
             every_n_epochs=10)
-        if not os.path.exists(f'./saved_models/{args.dataset}'):
+        if not os.path.exists(f'./subcluster_saved_models/{args.dataset}'):
             os.makedirs(f'./saved_models/{args.dataset}')
         if not os.path.exists(
-                f'./saved_models/{args.dataset}/{args.exp_name}'):
-            os.makedirs(f'./saved_models/{args.dataset}/{args.exp_name}')
+                f'./subcluster_saved_models/{args.dataset}/{args.exp_name}'):
+            os.makedirs(f'./subcluster_saved_models/{args.dataset}/{args.exp_name}')
     else:
         checkpoint_callback = None
 
@@ -377,8 +337,7 @@ def get_args() -> Namespace:
 def train_cluster_net():
 
     args = get_args()
-    dataset_obj = GMM_dataset(
-        args) if args.dataset == "synthetic" else CustomDataset(args)
+    dataset_obj = CustomDataset(args)
 
     train_loader, val_loader = dataset_obj.get_loaders()
 
@@ -392,7 +351,8 @@ def train_cluster_net():
 
     seed.seed_everything(args.seed)
 
-    resume_path = need_resume(f"./saved_models/{args.dataset}/{args.exp_name}")
+    resume_path = need_resume(
+        f"./subcluster_saved_models/{args.dataset}/{args.exp_name}")
     if resume_path is not None:
         ckpt = torch.load(resume_path, map_location=torch.device('cpu'))
         # make things easier

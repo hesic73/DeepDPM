@@ -132,12 +132,7 @@ def split_step(K: int,
                mus_sub,
                cov_const,
                alpha,
-               split_prob: Optional[float],
                prior=None):
-
-    if split_prob is not None:
-        split_decisions = torch.full((K, ), split_prob)
-        return split_decisions > torch.rand_like(split_decisions)
 
     split_decisions = torch.empty(K, dtype=torch.float32)
     for k in range(K):

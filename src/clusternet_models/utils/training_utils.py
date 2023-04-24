@@ -11,7 +11,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import numpy as np
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
-from typing import Optional,List
+from typing import Optional, List
 
 from src.clusternet_models.utils.clustering_utils.clustering_operations import (
     compute_pi_k, compute_mus, compute_covs, init_mus_and_covs_sub,
@@ -35,7 +35,8 @@ class training_utils:
                      self.hparams.split_merge_every_n_epochs == 0)
                 and self.last_performed == "merge")
 
-    def should_perform_merge(self, current_epoch: int, split_performed: bool):
+    def should_perform_merge(self, current_epoch: int,
+                             split_performed: bool) -> bool:
         # computes whether a merge step should be performed in the current epoch
         return (self.hparams.start_merging <= current_epoch
                 and ((current_epoch - self.hparams.start_merging) %
@@ -67,7 +68,11 @@ class training_utils:
             ]).any()
             return split_occured or merge_occured
 
-    def comp_cluster_params(self, train_resp:Tensor, codes:Tensor, K:int, prior:Optional[Priors]=None):
+    def comp_cluster_params(self,
+                            train_resp: Tensor,
+                            codes: Tensor,
+                            K: int,
+                            prior: Optional[Priors] = None):
         """compute cluster parameters
 
         Args:
@@ -105,14 +110,14 @@ class training_utils:
 
     def comp_subcluster_params(
         self,
-        train_resp:Tensor,
-        train_resp_sub:Tensor,
-        codes:Tensor,
-        K:int,
-        mus_sub:Tensor,
-        covs_sub:Tensor,
-        pi_sub:Tensor,
-        prior:Optional[Priors]=None,
+        train_resp: Tensor,
+        train_resp_sub: Tensor,
+        codes: Tensor,
+        K: int,
+        mus_sub: Tensor,
+        covs_sub: Tensor,
+        pi_sub: Tensor,
+        prior: Optional[Priors] = None,
     ):
 
         mus_sub, covs_sub, pi_sub = compute_mus_covs_pis_subclusters(
@@ -130,7 +135,7 @@ class training_utils:
                                train_resp_sub,
                                codes,
                                K,
-                               prior:Optional[Priors]=None):
+                               prior: Optional[Priors] = None):
         mus_sub, covs_sub, pi_sub = [], [], []
         for k in range(K):
             mus, covs, pis = init_mus_and_covs_sub(
@@ -311,11 +316,11 @@ class training_utils:
 
     @staticmethod
     def log_codes_and_responses(
-        model_codes:List[Tensor],
-        model_gt:List[Tensor],
-        model_resp:List[Tensor],
-        model_resp_sub:List[Tensor],
-        codes:Tensor,
+        model_codes: List[Tensor],
+        model_gt: List[Tensor],
+        model_resp: List[Tensor],
+        model_resp_sub: List[Tensor],
+        codes: Tensor,
         logits: Tensor,  # output of the model (n,dim_features)
         y: Tensor,  # ground truth labels
         sublogits: Optional[Tensor] = None,
@@ -329,7 +334,7 @@ class training_utils:
             y (torch.tensor): the ground truth labels (n_batch,)
             sublogits (Tensor, optional): (n_batch,2K). Defaults to None. The subclustering nets response to the codes
         """
-        
+
         if codes is not None:
             model_codes.append(codes.detach().cpu())
         model_gt.append(y.detach().cpu())
@@ -337,5 +342,3 @@ class training_utils:
             model_resp.append(logits.detach().cpu())
         if sublogits is not None:
             model_resp_sub.append(sublogits.detach().cpu())
-
-    
