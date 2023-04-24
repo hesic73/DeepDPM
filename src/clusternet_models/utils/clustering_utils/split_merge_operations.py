@@ -238,28 +238,14 @@ def update_subclusters_params_split(mus_sub,
 
 
 def update_models_parameters_split(split_decisions, mus, covs, pi,
-                                   mus_ind_to_split, mus_sub, covs_sub, pi_sub,
-                                   codes, logits, logits_sub, 
-                                   how_to_init_mu_sub, prior, use_priors):
+                                   mus_ind_to_split, mus_sub, covs_sub, pi_sub):
     mus_ind_to_split = torch.nonzero(split_decisions, as_tuple=False)
     # update the mus, covs and pis
     mus_new, covs_new, pi_new = update_clusters_params_split(
         mus, covs, pi, mus_ind_to_split, split_decisions, mus_sub, covs_sub,
         pi_sub)
-    # update the submus, subcovs and subpis
-    mus_sub_new, covs_sub_new, pi_sub_new = update_subclusters_params_split(
-        mus_sub,
-        covs_sub,
-        pi_sub,
-        mus_ind_to_split,
-        split_decisions,
-        codes,
-        logits,
-        logits_sub,
-        how_to_init_mu_sub,
-        prior,
-        use_priors=use_priors)
-    return mus_new, covs_new, pi_new, mus_sub_new, covs_sub_new, pi_sub_new
+
+    return mus_new, covs_new, pi_new
 
 
 def update_clusters_params_merge(

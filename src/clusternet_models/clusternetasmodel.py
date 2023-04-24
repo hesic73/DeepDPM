@@ -125,9 +125,6 @@ class ClusterNetModel(pl.LightningModule):
         self.split_performed = False
         self.merge_performed = False
 
-    def on_validation_epoch_start(self):
-        self.initialize_net_params(stage="val")
-
     def initialize_net_params(self, stage: str):
         self.codes = []
         if stage == "train":
@@ -256,63 +253,6 @@ class ClusterNetModel(pl.LightningModule):
         
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        codes = x
-
-        logits = self.cluster_net(codes)
-        if batch_idx == 0 and (self.current_epoch < 5
-                               or self.current_epoch % 50 == 0):
-            self.log_logits(logits)
-
-        if self.current_training_stage != "gather_codes":
-            cluster_loss = self.training_utils.cluster_loss_function(
-                codes.view(-1, self.codes_dim),
-                logits,
-                model_mus=self.mus,
-                K=self.K,
-                codes_dim=self.codes_dim,
-                model_covs=self.covs if self.cluster_loss
-                in ("diag_NIG", "KL_GMM_2") else None,
-                pi=self.pi)
-            loss = self.cluster_loss_weight * cluster_loss
-            self.log("cluster_net_train/val/cluster_loss", loss)
-
-            if self.current_epoch >= self.start_sub_clustering:
-                subclusters = self.subcluster(codes, logits)
-                subcluster_loss = self.training_utils.subcluster_loss_function_new(
-                    codes.view(-1, self.codes_dim),
-                    logits,
-                    subclusters,
-                    self.K,
-                    self.mus_sub,
-                    covs_sub=self.covs_sub if self.subcluster_loss
-                    in ("diag_NIG", "KL_GMM_2") else None,
-                    pis_sub=self.pi_sub)
-                self.log("cluster_net_train/val/subcluster_loss",
-                         subcluster_loss)
-                loss += self.subcluster_loss_weight * subcluster_loss
-            else:
-                subclusters = None
-        else:
-            loss = torch.tensor(1.0)
-            subclusters = None
-            logits = None
-
-        # log val data
-        self.training_utils.log_codes_and_responses(
-            self.codes,
-            self.val_gt,
-            self.val_resp,
-            model_resp_sub=self.val_resp_sub,
-            codes=codes,
-            logits=logits,
-            y=y,
-            sublogits=subclusters
-        )
-        self.validation_step_outputs.append(loss.detach().clone().cpu())
-        return loss
-
     def on_train_epoch_end(self):
         """Perform logging operations and computes the clusters' and the subclusters' centers.
         Also perform split and merges steps
@@ -394,13 +334,13 @@ class ClusterNetModel(pl.LightningModule):
                 rank_zero_print(f"pi:{self.pi.tolist()}")
                 
             if (self.start_sub_clustering == self.current_epoch + 1):
-                (self.mus_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
-                    self.K,)
+                (self.mus_sub,self.covs_sub,self.pi_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
+                    self.K,self.prior)
                 rank_zero_print(f"Initial pi_sub:{self.pi_sub}")
             elif (self.start_sub_clustering <= self.current_epoch
                   and not freeze_mus):
-                (self.mus_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
-                    self.K,)
+                (self.mus_sub,self.covs_sub,self.pi_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
+                    self.K,self.prior)
                 rank_zero_print(f"pi_sub:{self.pi_sub}")
 
             if perform_split and not freeze_mus:
@@ -446,41 +386,24 @@ class ClusterNetModel(pl.LightningModule):
 
         self.log("K", torch.tensor(self.K,dtype=torch.float32))
 
-    def on_validation_epoch_end(self):
-        self.concatenate_net_params(stage='val')
-        # Take mean of all batch losses
-        avg_loss = torch.stack(self.validation_step_outputs).mean()
-        self.log("cluster_net_train/val/avg_val_loss", avg_loss)
-        if self.current_training_stage != "gather_codes" and self.evaluate_every_n_epochs and self.current_epoch % self.evaluate_every_n_epochs == 0:
-            z = self.val_resp.argmax(axis=1).cpu()
-            self.log_clustering_metrics(stage="val")
-            if not (self.split_performed or self.merge_performed
-                    ) and self.log_metrics_at_train:
-                self.log_clustering_metrics(stage="total")
-
-        if self.current_epoch > self.start_sub_clustering and (
-                self.current_epoch % 50 == 0
-                or self.current_epoch == self.train_cluster_net - 1):
-            from lightning.pytorch.loggers.logger import DummyLogger
-            if not isinstance(self.logger, DummyLogger):
-                self.plot_histograms(train=False, for_thesis=True)
-
-
-    def update_subcluster_net_split(self, split_decisions):
-        pass
-
     def perform_split_operations(self, split_decisions):
         # split_decisions is a list of k boolean indicators of whether we would want to split cluster k
         # update the cluster net to have the new K
 
-        clus_opt = self.optimizers()
+        clus_opt:LightningOptimizer = self.optimizers()
 
+        # print([(n,id(p)) for n,p in self.cluster_net.named_parameters()])
+        # print([id(k) for k in clus_opt.state.keys()])
         # remove old weights from the optimizer state
         for p in self.cluster_net.class_fc2.parameters():
-            clus_opt.state.pop(p)
+            # there is still some subtle bugs after resume ...
+            try:
+                clus_opt.state.pop(p)
+            except KeyError:
+                pass
         self.cluster_net.update_K_split(split_decisions,
                                         self.init_new_weights,
-                                        self.subclustering_net)
+                                        None)
         clus_opt.param_groups[1]["params"] = list(
             self.cluster_net.class_fc2.parameters())
         self.cluster_net.class_fc2.to(self._device)
@@ -489,10 +412,7 @@ class ClusterNetModel(pl.LightningModule):
         (
             self.mus_new,
             self.covs_new,
-            self.pi_new,
-            self.mus_sub_new,
-            self.covs_sub_new,
-            self.pi_sub_new,
+            self.pi_new
         ) = update_models_parameters_split(split_decisions,
                                            self.mus,
                                            self.covs,
@@ -500,23 +420,14 @@ class ClusterNetModel(pl.LightningModule):
                                            mus_ind_to_split,
                                            self.mus_sub,
                                            self.covs_sub,
-                                           self.pi_sub,
-                                           self.codes,
-                                           self.train_resp,
-                                           self.train_resp_sub,
-                                           self.how_to_init_mu_sub,
-                                           self.prior,
-                                           use_priors=self.use_priors)
+                                           self.pi_sub)
         # update K
         rank_zero_print(
             f"Splitting clusters {np.arange(self.K)[split_decisions.bool().tolist()]}"
         )
-        rank_zero_print(f"pi_sub_new:{self.pi_sub_new}")
 
         self.K += len(mus_ind_to_split)
 
-        # update subclusters_net
-        self.update_subcluster_net_split(split_decisions)
         self.mus_ind_to_split = mus_ind_to_split
 
     def update_subcluster_nets_merge(self, merge_decisions, pairs_to_merge,
@@ -638,10 +549,7 @@ class ClusterNetModel(pl.LightningModule):
     def update_params_split_merge(self):
         self.mus = self.mus_new
         self.covs = self.covs_new
-        self.mus_sub = self.mus_sub_new
-        self.covs_sub = self.covs_sub_new
         self.pi = self.pi_new
-        self.pi_sub = self.pi_sub_new
 
     def init_covs_and_pis_given_mus(self):
         dis_mat = torch.empty((len(self.codes), self.K))
