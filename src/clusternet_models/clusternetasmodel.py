@@ -336,7 +336,12 @@ class ClusterNetModel(pl.LightningModule):
             # 好像只有split&merge之前计算就可以
                 
             if (perform_split or perform_merge) and not freeze_mus:
-                (self.mus_sub,self.covs_sub,self.pi_sub,self.train_resp_sub)=self.training_utils.custom_comp_subcluster_params(self.train_resp,self.codes.view(-1, self.codes_dim),
+                (self.mus_sub,
+                 self.covs_sub,
+                 self.pi_sub,
+                 self.train_resp_sub) = self.training_utils.custom_comp_subcluster_params(
+                    self.train_resp,
+                    self.codes.view(-1, self.codes_dim),
                     self.K,self.prior)
                 rank_zero_print(f"pi_sub:{self.pi_sub}")
 
@@ -427,22 +432,6 @@ class ClusterNetModel(pl.LightningModule):
 
         self.mus_ind_to_split = mus_ind_to_split
 
-    def update_subcluster_nets_merge(self, merge_decisions, pairs_to_merge,
-                                     highest_ll):
-        # update the cluster net to have the new K
-        subclus_opt = self.optimizers()
-
-        # remove old weights from the optimizer state
-        for p in self.subclustering_net.parameters():
-            subclus_opt.state.pop(p)
-        self.subclustering_net.update_K_merge(
-            merge_decisions,
-            pairs_to_merge=pairs_to_merge,
-            highest_ll=highest_ll,
-            init_new_weights=self.merge_init_weights_sub)
-        subclus_opt.param_groups[0]["params"] = list(
-            self.subclustering_net.parameters())
-
     def perform_merge(self,
                       mus_lists_to_merge,
                       highest_ll_mus,
@@ -484,9 +473,6 @@ class ClusterNetModel(pl.LightningModule):
         # adjust k
         self.K -= len(highest_ll_mus)
 
-        # update the subclustering net
-        self.update_subcluster_nets_merge(inds_to_mask, mus_lists_to_merge,
-                                          highest_ll_mus)
 
         # update the cluster net to have the new K
         clus_opt = self.optimizers()
