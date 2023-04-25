@@ -14,7 +14,7 @@ from scipy.optimize import linear_sum_assignment as linear_assignment
 from typing import Optional, List
 
 from src.clusternet_models.utils.clustering_utils.clustering_operations import (
-    compute_pi_k, compute_mus, compute_covs, custom_init_mus_and_covs_sub, init_mus_and_covs_sub,compute_data_covs_hard_assignment,
+    compute_pi_k, compute_mus, compute_covs, custom_init_mus_and_covs_sub, init_mus_and_covs_sub, compute_data_covs_hard_assignment,
     compute_mus_covs_pis_subclusters)
 
 from src.clusternet_models.utils.clustering_utils.priors import Priors
@@ -350,30 +350,63 @@ class training_utils:
         if sublogits is not None:
             model_resp_sub.append(sublogits.detach().cpu())
 
+    # 经典面向过程
     def custom_comp_subcluster_params(
         self,
         logits: Tensor,
         codes: Tensor,
         K: int,
-        prior:Priors
+        prior: Priors
     ):
+        mus_sub = []
+        pi_sub = []
+        covs_sub = []
         labels_sub = torch.empty((len(logits),), dtype=torch.int64)  # (n,)
-        mus_sub, covs_sub, pi_sub = [], [], []
+
         for k in range(K):
-            mus, covs, pis = custom_init_mus_and_covs_sub(
-                codes=codes,
-                k=k,
-                how_to_init_mu_sub=self.hparams.how_to_init_mu_sub,
-                logits=logits,
-                labels_sub=labels_sub, # in-place modification
-                prior=prior,
-                use_priors=self.hparams.use_priors)
-            mus_sub.append(mus)
-            covs_sub.append(covs)
-            pi_sub.append(pis)
+            indices_k = logits.argmax(-1) == k  # (n,) bool
+            codes_k = codes[indices_k]
+            if len(codes_k) <= 2:
+                raise RuntimeError(f"len(codes_{k}) <= 2")
+
+            if self.hparams.how_to_init_mu_sub == "kmeans":
+                # labels (n_k,)
+
+                labels, cluster_centers = GPU_KMeans(X=codes_k.detach(),
+                                                     num_clusters=2,
+                                                     device=torch.device(
+                                                         self.device),
+                                                     tqdm_flag=False)
+
+                _, counts = torch.unique(labels, return_counts=True)
+            else:
+                raise NotImplementedError("invalid how_to_init_mu_sub")
+
+            data_covs_sub = compute_data_covs_hard_assignment(
+                labels, codes_k, 2, cluster_centers, prior)
+            if self.hparams.use_priors:
+                cluster_centers = prior.compute_post_mus(counts, cluster_centers.cpu())
+                tmp_covs_sub = []
+                for k in range(2):
+                    covs_sub_k = prior.compute_post_cov(
+                        counts[k], codes_k[labels == k].mean(axis=0),
+                        data_covs_sub[k])
+                    tmp_covs_sub.append(covs_sub_k)
+                tmp_covs_sub = torch.stack(tmp_covs_sub)
+            else:
+                tmp_covs_sub = data_covs_sub
+
+            mus_sub.append(cluster_centers)
+            pi_sub.append(counts / float(len(codes)))
+            covs_sub.append(tmp_covs_sub)
+
+            labels = labels + 2*k
+            index_k = torch.arange(0, len(logits))[indices_k]
+            labels = labels.type(torch.int64)
+            labels_sub.scatter_(dim=0, index=index_k, src=labels)
+
         mus_sub = torch.cat(mus_sub)
         covs_sub = torch.cat(covs_sub)
         pi_sub = torch.cat(pi_sub)
         logits_sub = F.one_hot(labels_sub, num_classes=2*K)
-        return pi_sub, mus_sub, covs_sub,logits_sub
-        
+        return pi_sub, mus_sub, covs_sub,  logits_sub

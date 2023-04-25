@@ -134,12 +134,6 @@ class ClusterNetModel(pl.LightningModule):
             self.train_resp = []
             self.train_resp_sub = []
             self.train_gt = []
-        elif stage == "val":
-            if self.current_epoch > 0:
-                del self.val_resp, self.val_resp_sub, self.val_gt
-            self.val_resp = []
-            self.val_resp_sub = []
-            self.val_gt = []
         else:
             raise NotImplementedError()
 
@@ -151,17 +145,10 @@ class ClusterNetModel(pl.LightningModule):
                 self.train_resp = torch.cat(
                     self.train_resp)  # (n,dim_features)
             if len(self.train_resp_sub) > 0:
+                raise RuntimeError("GGGGGGG")
                 self.train_resp_sub = torch.cat(self.train_resp_sub)  # (n,2*K)
             if len(self.train_gt) > 0:
                 self.train_gt = torch.cat(self.train_gt)  # (n,)
-        elif stage == "val":
-            if len(self.val_resp) > 0:
-                self.val_resp = torch.cat(
-                    self.val_resp)  # (n,dim_features)
-            if len(self.val_resp_sub) > 0:
-                self.val_resp_sub = torch.cat(self.val_resp_sub)  # (n,2*K)
-            if len(self.val_gt) > 0:
-                self.val_gt = torch.cat(self.val_gt)  # (n,)
         else:
             raise NotImplementedError()
 
@@ -254,13 +241,6 @@ class ClusterNetModel(pl.LightningModule):
         return loss
 
     def on_train_epoch_end(self):
-        """Perform logging operations and computes the clusters' and the subclusters' centers.
-        Also perform split and merges steps
-
-        Args:
-            outputs ([type]): [description]
-        """
-        # rank_zero_print(f"Epoch {self.current_epoch:3d} ends.")
         self.concatenate_net_params(stage='train')
 
         if self.current_training_stage == "gather_codes":
@@ -343,20 +323,7 @@ class ClusterNetModel(pl.LightningModule):
                     self.train_resp,
                     self.codes.view(-1, self.codes_dim),
                     self.K,self.prior)
-                (
-                    self.pi_sub,
-                    self.mus_sub,
-                    self.covs_sub,
-                ) = self.training_utils.comp_subcluster_params(
-                    self.train_resp,
-                    self.train_resp_sub,
-                    self.codes,
-                    self.K,
-                    self.mus_sub,
-                    self.covs_sub,
-                    self.pi_sub,
-                    self.prior,
-                )
+                
                 rank_zero_print(f"pi_sub:{self.pi_sub}")
 
             if perform_split and not freeze_mus:
