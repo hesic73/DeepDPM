@@ -1,7 +1,7 @@
 #!/bin/bash
 
-PROJECT=DeepDPM_CNG_subcluster
-EXP_NAME=baseline
+PROJECT=DeepDPM_CNG
+EXP_NAME=baseline_K_10
 DATASET=CNG
 
 MINIMAL_ARGS="--dataset "$DATASET" \
@@ -15,7 +15,7 @@ MINIMAL_ARGS="--dataset "$DATASET" \
 --gpus 0"
 
 
-EXPERIMENT_ARGS=" --init_k 1 \
+EXPERIMENT_ARGS=" --init_k 10 \
 --lr_scheduler CosineAnnealingLR \
 --cluster_lr 0.001 \
 --clusternet_hidden_layer_list 64 128 64 \
