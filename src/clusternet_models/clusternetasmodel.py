@@ -334,15 +334,29 @@ class ClusterNetModel(pl.LightningModule):
                 rank_zero_print(f"pi:{self.pi.tolist()}")
                 
             # 好像只有split&merge之前计算就可以
-                
+            
             if (perform_split or perform_merge) and not freeze_mus:
-                (self.mus_sub,
+                (self.pi_sub,
+                 self.mus_sub,
                  self.covs_sub,
-                 self.pi_sub,
                  self.train_resp_sub) = self.training_utils.custom_comp_subcluster_params(
                     self.train_resp,
                     self.codes.view(-1, self.codes_dim),
                     self.K,self.prior)
+                (
+                    self.pi_sub,
+                    self.mus_sub,
+                    self.covs_sub,
+                ) = self.training_utils.comp_subcluster_params(
+                    self.train_resp,
+                    self.train_resp_sub,
+                    self.codes,
+                    self.K,
+                    self.mus_sub,
+                    self.covs_sub,
+                    self.pi_sub,
+                    self.prior,
+                )
                 rank_zero_print(f"pi_sub:{self.pi_sub}")
 
             if perform_split and not freeze_mus:
